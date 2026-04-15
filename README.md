@@ -36,7 +36,7 @@ Including these flags when running the Python script without "--autorun" does no
 **IMPORTANT**: All Supreme Machine Code files have file extension .smc, and all SupremeASM v2 files have file extension .sasm. To differentiate from SupremeASM v1, SupremeASM v2 files must have header "@version 2". See examples for uh...examples.
 
 
-**ALSO IMPORTANT**: The makefile probably won't work if you're on a different OS or something or other tbh I don't really get makefiles, you might have to modify it so the C code compiles. Anyways it works on my machine so YMMV.
+**ALSO IMPORTANT**: The makefile probably won't work if you're on a different OS or hardware or something or other tbh I don't really get makefiles, you might have to modify it so the C code compiles. Anyways it works on my machine but YMMV.
 
 ## Register Conventions
 While all registers are technically general-purpose, the general conventions are as follows:
