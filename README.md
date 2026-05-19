@@ -103,7 +103,7 @@ Arguments are passed via `%r0-%r3`. Results are returned in `%r0`.
 | **2** | `get_time`| None | MS since program start |
 | **3** | `sbrk` | `%r3`: Increment size | Old heap end address |
 
-Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors. Reading and writing from other files is planned.
+Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors. Reading and writing from other files is planned. Reading from stdin returns each character as its ascii representation.
 
 ---
 

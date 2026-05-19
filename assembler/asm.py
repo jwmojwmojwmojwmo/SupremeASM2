@@ -51,6 +51,7 @@ syscall           | f0000000          | System call (r0=ID)
     r3: size  
 halt              | ffffffff          | Stop execution
 """
+import os
 import struct
 import sys
 import time
@@ -418,8 +419,13 @@ def main():
             pc += 8
         else:
             pc += 4
-    output_file_name = sys.argv[1].replace(".sasm", "") + ".smc"
-    with open("../" + output_file_name, "wb") as output_file:
+    output_file_name = os.path.basename(sys.argv[1]).replace(".sasm", "") + ".smc"
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "executable"))
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    output_path = os.path.join(output_dir, output_file_name)
+    with open(output_path, "wb") as output_file:
         output_file.write(smc)
     end = time.perf_counter()
     print(f"Compiled {sys.argv[1]} into {output_file_name} in {(end - start) * 1000:.2f} ms!\n")
@@ -429,7 +435,7 @@ def main():
     
     print("-- Loading into VM --\n")
 
-    run_args = ["../vm/main", "../" + output_file_name]
+    run_args = ["../vm/main", output_path]
     if ("--dpr" in sys.argv):
         run_args.append("--dpr")
     if ("--dpm" in sys.argv):

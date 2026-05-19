@@ -46,6 +46,7 @@ uint32_t load_program(char *filename, Status *status)
     long size = ftell(file);
     rewind(file);
     uint32_t address = allocate_memory(0, (uint32_t)size);
+    uint32_t initial_address = address;
     int byte;
 
     // fgetc reads one byte at a time as an int so it can detect EOF
@@ -64,8 +65,9 @@ uint32_t load_program(char *filename, Status *status)
     }
 
     fclose(file);
-    printf("Program loaded successfully starting at 0x%08X (%d)\n", address, address);
-    return STATUS_OK;
+    printf("Program loaded successfully starting at 0x%08X (%d)\n", initial_address, initial_address);
+    *status = STATUS_OK;
+    return initial_address;
 }
 
 Status run_program(CPU *cpu, uint32_t pc)
