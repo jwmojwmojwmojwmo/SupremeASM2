@@ -144,3 +144,88 @@ syscall;
 sub %0, %3, %0;
 halt;
 ```
+
+Factorial Calculator. Takes input from user and calculates factorial (only works up to around 12! due to integer overflow)
+```
+@version 2
+// gets user input n and finds n! recursively
+
+// Load text and output
+ld #0x2000, %2;
+ld #0x456E7465, %4;
+sti %4, %2+#0;
+ld #0x72206E3A, %4;
+sti %4, %2+#4;
+ld #0x20, %4;
+stb %4, %2+#8;
+ld #1, %0;
+ld #1, %1;
+ld #9, %3;
+syscall;
+// wait for user input
+ld #0, %0;
+ld #0, %1;
+ld #0x3000, %2;
+ld #16, %3;
+syscall;
+// convert ascii to int
+ld #0, %0;
+ld #10, %4;
+ld #48, %5;
+ld #10, %7;
+lbl: atoi_loop;
+ldb %2+#0, %6;
+bre %6, %7, atoi_done;
+bre %6, %0, atoi_done;
+mul %0, %4, %0;
+sub %6, %5, %6; 
+add %0, %6, %0;
+inc %2;
+br atoi_loop;
+lbl: atoi_done;
+// int in r0, start factorial calculation
+ld #4, %4;
+sub %14, %4, %14;
+sti %0, %14+#0;
+gpc %15, factorial_calculated;
+br calculate_factorial;
+lbl: factorial_calculated;
+// result in r0, need to convert int to ascii
+ld #10, %4;
+ld #48, %5;
+ld #0, %7; 
+ld #0, %3;
+lbl: itoa_loop;
+mod %0, %4, %6;
+div %0, %4, %0; 
+add %6, %5, %6;
+dec %2;
+stb %6, %2+#0;
+inc %3;
+bgs %0, %7, itoa_loop; 
+ld #1, %0;
+ld #1, %1;
+syscall;
+halt;
+lbl: calculate_factorial;
+sub %14, %4, %14;
+sti %15, %14+#0;
+ldi %14+#4, %0;
+ld #2, %5;
+bgs %5, %0, end_loop;
+mov %0, %6;
+ld #1, %7;
+sub %6, %7, %6;
+sub %14, %4, %14;
+sti %6, %14+#0;
+gpc %15, ret;
+br calculate_factorial;
+lbl: ret;
+add %14, %4, %14;
+ldi %14+#4, %6;
+mul %0, %6, %0;
+lbl: end_loop;
+ldi %14+#0, %15;
+add %14, %4, %14;
+jmp %15;
+```

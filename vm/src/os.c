@@ -211,7 +211,7 @@ uint32_t allocate_memory(uint32_t start_address, uint32_t size)
         }
         i += block_size + 12;
     }
-    return -1; // no block large enough
+    return -1; // no block large enough`
 }
 
 Status extend_memory(uint32_t address, uint32_t size)

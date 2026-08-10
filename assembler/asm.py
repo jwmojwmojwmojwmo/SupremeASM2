@@ -57,7 +57,7 @@ import sys
 import time
 import subprocess
         
-def translate_ld(operands):
+def translate_ld(operands):     
     imm = int(operands[0].replace("#", ""), 0)
     reg = int(operands[1].replace("%", ""))
     ins = struct.pack(">I", 0xa00fffff | (reg << 20))
@@ -328,7 +328,10 @@ def translate(split_asm, line_number):
         print(f"Compilation failed! empty instruction @ line {line_number + 1}")
         sys.exit(1)
     if (split_asm[0] not in translate_dict):
-        print(f"Compliation failed! unknown operand: {split_asm[0]} @ line {line_number + 1}")
+        print(f"Compilation failed! unknown operand: {split_asm[0]} @ line {line_number + 1}")
+        sys.exit(1)
+    if (split_asm[0] == "ld" and "+" in split_asm[1]):
+        print(f"Compilation failed! invalid syntax for ld instruction @ line {line_number + 1} (did you mean ldi?)")
         sys.exit(1)
     for operand in split_asm[1:]:
         try:
@@ -379,43 +382,58 @@ def main():
         
     print(f"Compiling {sys.argv[1]}...")
     start = time.perf_counter()
-    clean_text = ""
-    for line in code.split("\n"):
-        clean_text += line.split("//")[0] + "\n"
-    raw_commands = clean_text.replace("@version 2", "").lower().replace("\n", "").split(";")
-    code = [cmd.strip() for cmd in raw_commands if cmd.strip() != ""]
+    
+    # 1. Parse line-by-line to lock in the real line numbers
+    commands_with_lines = []
+    for line_idx, raw_line in enumerate(code.split('\n')):
+        actual_line = line_idx
+        
+        # Strip version header and comments
+        clean_line = raw_line.replace("@version 2", "").split("//")[0]
+        
+        # Split by ';' to handle multiple commands on a single line
+        for cmd in clean_line.lower().split(";"):
+            cmd = cmd.strip()
+            if cmd != "":
+                # Store a tuple of the command AND its original line number
+                commands_with_lines.append((cmd, actual_line))
+
+    # 2. Extract labels and calculate PC
     labelled_code = []
     labels = {}
     pc = 0
-    for line in code:
-        if (line.startswith("lbl:")):
-            label_name = line.split(":")[1].strip()
-            if (label_name in labels):
-                print(f"Compilation failed! duplicate label: {label_name}")
+    for cmd, line_num in commands_with_lines:
+        if cmd.startswith("lbl:"):
+            label_name = cmd.split(":")[1].strip()
+            if not label_name:
+                print(f"Compilation failed! empty label name @ line {line_num}")
+                sys.exit(1)
+                print(f"Compilation failed! duplicate label: {label_name} @ line {line_num}")
                 sys.exit(1)
             labels[label_name] = pc
-            continue   
         else:
-            labelled_code.append(line)
-            parts = line.replace(",", " ").split()
-            if (parts[0] == "ld"):
+            labelled_code.append((cmd, line_num))
+            parts = cmd.replace(",", " ").split()
+            if parts[0] == "ld":
                 pc += 8
             else:
                 pc += 4
-    
+                
+    # 3. Assemble Machine Code
     smc = bytearray()
     pc = 0
-    for index, line in enumerate(labelled_code):
-        line = line.replace(",", " ").split()
-        for i in range(len(line)):
-            if (i == 0):
+    for cmd, line_num in labelled_code:
+        parts = cmd.replace(",", " ").split()
+        for i in range(len(parts)):
+            if i == 0:
                 continue
-            if (line[i] in labels):
-                if (line[0] in ["br", "bre", "brn", "bgs", "bgu", "gpc"]):
-                    offset = labels[line[i]] - pc - 4
-                    line[i] = "#" + str(offset)
-        smc.extend(translate(line, index + 2))
-        if (line[0] == "ld"):
+            if parts[i] in labels:
+                if parts[0] in ["br", "bre", "brn", "bgs", "bgu", "gpc"]:
+                    offset = labels[parts[i]] - pc - 4
+                    parts[i] = "#" + str(offset)
+        smc.extend(translate(parts, line_num))
+        
+        if parts[0] == "ld":
             pc += 8
         else:
             pc += 4
