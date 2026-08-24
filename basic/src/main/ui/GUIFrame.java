@@ -1,12 +1,20 @@
-package basic.src.ui;
+package basic.src.main.ui;
 
-import java.awt.*;
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
+
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-import basic.src.compiler.SupremeDriver;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Insets;
 
 public class GUIFrame extends JFrame {
     private final CodePanel editor;
@@ -16,7 +24,6 @@ public class GUIFrame extends JFrame {
     private boolean manuallyStopped = false;
     private final String NAME = "SupremeIDE";
     private final int NEW_WINDOW_OFFSET = 25;
-    private SupremeDriver driver;
 
     public GUIFrame() {
         super();
@@ -31,7 +38,6 @@ public class GUIFrame extends JFrame {
         add(console, BorderLayout.SOUTH);
 
         //redirectSystemOut();
-        driver = new SupremeDriver();
     }
 
     public GUIFrame(File file) throws IOException {
@@ -99,7 +105,6 @@ public class GUIFrame extends JFrame {
         console.clear();
         runThread = new Thread(() -> {
             // TODO
-            driver.compile(getCleanCode(editor.getCode()), "temp.sasm");
             // driver.assemble("temp.sasm");
             // driver.run("temp.smc");
         });

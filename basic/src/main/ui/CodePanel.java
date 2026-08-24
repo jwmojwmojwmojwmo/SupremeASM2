@@ -1,4 +1,4 @@
-package basic.src.ui;
+package basic.src.main.ui;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
