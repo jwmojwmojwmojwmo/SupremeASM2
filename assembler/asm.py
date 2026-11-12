@@ -56,231 +56,256 @@ import struct
 import sys
 import time
 import subprocess
+
+def parse_reg(token):
+    t = token.replace("%", "").lower()
+    if t.startswith("r"):
+        t = t[1:]
+    try:
+        value = int(t, 16) if len(t) == 1 else int(t, 10)
+    except ValueError:
+        raise ValueError(f"invalid register: %{t}")
+    if not 0 <= value <= 15:
+        raise ValueError(f"invalid register: %{t}")
+    return value
+
+def off16(value):
+    if not -32768 <= value <= 32767:
+        raise ValueError(f"offset {value} does not fit in a 16-bit signed field (-32768..32767)")
+    return value & 0xFFFF
+
+def off8(value):
+    if not -128 <= value <= 127:
+        raise ValueError(f"shift {value} does not fit in an 8-bit signed field (-128..127)")
+    return value & 0xFF
+
+def imm32(value):
+    if not -2147483648 <= value <= 4294967295:
+        raise ValueError(f"immediate {value} does not fit in a 32-bit field")
+    return value & 0xFFFFFFFF
         
 def translate_ld(operands):     
     imm = int(operands[0].replace("#", ""), 0)
-    reg = int(operands[1].replace("%", ""))
+    reg = parse_reg(operands[1])
     ins = struct.pack(">I", 0xa00fffff | (reg << 20))
-    ins += struct.pack(">i", imm)
+    ins += struct.pack(">I", imm32(imm))
     return ins
 
 def translate_ldb(operands):
     # ldb %r+%o, %s     | 02rso000
     # ldb %r+#o, %s     | 00rsoooo
-    reg_r = int(operands[0].split("+")[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0].split("+")[0])
+    reg_s = parse_reg(operands[1])
     if ("#" in operands[0]):
         offset = int(operands[0].split("+")[1].replace("#", ""), 0)
-        offset = offset & 0xFFFF # ensure correct length
+        offset = off16(offset)
         ins = (0x00 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     else:
-        reg_o = int(operands[0].split("+")[1].replace("%", ""))
+        reg_o = parse_reg(operands[0].split("+")[1])
         ins = (0x02 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_ldi(operands):
     # ldi %r+#o, %s     | 01rsoooo
     # ldi %r+%o, %s     | 03rso000
-    reg_r = int(operands[0].split("+")[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0].split("+")[0])
+    reg_s = parse_reg(operands[1])
     if ("#" in operands[0]):
         offset = int(operands[0].split("+")[1].replace("#", ""), 0)
-        offset = offset & 0xFFFF # ensure correct length
+        offset = off16(offset)
         ins = (0x01 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     else:
-        reg_o = int(operands[0].split("+")[1].replace("%", ""))
+        reg_o = parse_reg(operands[0].split("+")[1])
         ins = (0x03 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_stb(operands):
     # stb %r, %s+#o     | 10rsoooo
     # stb %r, %s+%o     | 12rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].split("+")[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1].split("+")[0])
     if ("#" in operands[1]):
         offset = int(operands[1].split("+")[1].replace("#", ""), 0)
-        offset = offset & 0xFFFF # ensure correct length
+        offset = off16(offset)
         ins = (0x10 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     else:
-        reg_o = int(operands[1].split("+")[1].replace("%", ""))
+        reg_o = parse_reg(operands[1].split("+")[1])
         ins = (0x12 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
-
 
 def translate_sti(operands):
     # sti %r, %s+#o     | 11rsoooo
     # sti %r, %s+%o     | 13rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].split("+")[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1].split("+")[0])
     if ("#" in operands[1]):
         offset = int(operands[1].split("+")[1].replace("#", ""), 0)
-        offset = offset & 0xFFFF # ensure correct length
+        offset = off16(offset)
         ins = (0x11 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     else:
-        reg_o = int(operands[1].split("+")[1].replace("%", ""))
+        reg_o = parse_reg(operands[1].split("+")[1])
         ins = (0x13 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_mov(operands):
     # mov %r, %s        | 20rs0000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     ins = (0x20 << 24) | (reg_r << 20) | (reg_s << 16) | 0xFFFF
     return struct.pack(">I", ins)
 
 def translate_inc(operands):
     # inc %r            | 21r00000
-    reg_r = int(operands[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
     ins = (0x21 << 24) | (reg_r << 20) | 0xFFFFF
     return struct.pack(">I", ins)
 
 def translate_dec(operands):
     # dec %r            | 22r00000
-    reg_r = int(operands[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
     ins = (0x22 << 24) | (reg_r << 20) | 0xFFFFF
     return struct.pack(">I", ins)
 
 def translate_shf(operands):
     # shf %r<<#v, %s    | 23rs00vv
     # shf %r>>#v, %s    | 23rs00vv
-    reg_r = int(operands[0].split("<<")[0].split(">>")[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0].split("<<")[0].split(">>")[0])
+    reg_s = parse_reg(operands[1])
     if ("<<" in operands[0]):
         shift = int(operands[0].split("<<")[1].replace("#", ""), 0)
-        shift = shift & 0xFF # ensure correct length
+        shift = off8(shift)
         ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (0xFF << 8) |shift
     else:
         shift = int(operands[0].split(">>")[1].replace("#", ""), 0)
-        shift = -shift & 0xFF # convert to 2's complement for negative shift
+        shift = off8(-shift) # convert to 2's complement for negative shift
         ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (0xFF << 8) | shift
     return struct.pack(">I", ins)
 
 def translate_add(operands):
     # add %r, %s, %o    | 24rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x24 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_sub(operands):
     # sub %r, %s, %o    | 25rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x25 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_mul(operands):
     # mul %r, %s, %o    | 26rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x26 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_div(operands):
     # div %r, %s, %o    | 27rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x27 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_mod(operands):
     # mod %r, %s, %o    | 28rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x28 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_and(operands):
     # and %r, %s, %o    | 29rso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x29 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_or(operands):
     # or %r, %s, %o     | 2arso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x2a << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_xor(operands):
     # xor %r, %s, %o    | 2brso000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
-    reg_o = int(operands[2].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
     ins = (0x2b << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFFF
     return struct.pack(">I", ins)
 
 def translate_not(operands):
     # not %r, %s       | 2crs0000
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     ins = (0x2c << 24) | (reg_r << 20) | (reg_s << 16) | 0xFFFF
     return struct.pack(">I", ins)
 
 def translate_br(operands):
     # br  #o            | 3000oooo
     offset = int(operands[0].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x30 << 24) | (0xFF << 16) |offset
     return struct.pack(">I", ins)
 
-
 def translate_bre(operands):
     # bre %r, %s, #o    | 31rsoooo
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     offset = int(operands[2].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x31 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     return struct.pack(">I", ins)
 
 def translate_brn(operands):
     # brn %r, %s, #o    | 32rsoooo
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     offset = int(operands[2].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x32 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     return struct.pack(">I", ins)
 
 def translate_bgs(operands):
     # bgs %r, %s, #o    | 33rsoooo
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     offset = int(operands[2].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x33 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     return struct.pack(">I", ins)
 
 def translate_bgu(operands):
     # bgu %r, %s, #o    | 34rsoooo
-    reg_r = int(operands[0].replace("%", ""))
-    reg_s = int(operands[1].replace("%", ""))
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
     offset = int(operands[2].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x34 << 24) | (reg_r << 20) | (reg_s << 16) | offset
     return struct.pack(">I", ins)
 
 def translate_gpc(operands):
     # gpc %r, #o        | 35r0oooo
-    reg_r = int(operands[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
     offset = int(operands[1].replace("#", ""), 0)
-    offset = offset & 0xFFFF # ensure correct length
+    offset = off16(offset)
     ins = (0x35 << 24) | (reg_r << 20) | (0xF << 16) | offset
     return struct.pack(">I", ins)
 
 def translate_jmp(operands):
     # jmp %r            | 36r00000
-    reg_r = int(operands[0].replace("%", ""))
+    reg_r = parse_reg(operands[0])
     ins = (0x36 << 24) | (reg_r << 20) | 0xFFFFF
     return struct.pack(">I", ins)
 
@@ -334,38 +359,27 @@ def translate(split_asm, line_number):
         print(f"Compilation failed! invalid syntax for ld instruction @ line {line_number + 1} (did you mean ldi?)")
         sys.exit(1)
     for operand in split_asm[1:]:
-        try:
-            if (not operand.startswith("%") and not operand.startswith("#")):
-                print(f"Compilation failed! unknown operand: {operand} @ line {line_number + 1}")
+        if operand.startswith("%"):
+            base = operand.replace("%", "").split("+")[0].split("<<")[0].split(">>")[0]
+            try:
+                parse_reg(base)
+            except ValueError:
+                print(f"Compilation failed! invalid register: %{base} @ line {line_number + 1}")
                 sys.exit(1)
-            if (operand.startswith("%")):
-                operand = operand.replace("%", "")
-                if (not "+" in operand and not ">>" in operand and not "<<" in operand):
-                    if (int(operand) < 0 or int(operand) > 15):
-                        print(f"Compilation failed! invalid register: %{operand} @ line {line_number + 1}")
-                        sys.exit(1)
-                elif ("+" in operand and not ">>" in operand and not "<<" in operand):
-                    reg = operand.split("+")[0].replace("%", "")
-                    if (int(reg) < 0 or int(reg) > 15):
-                        print(f"Compilation failed! invalid register: %{reg} @ line {line_number + 1}")
-                        sys.exit(1)
-                elif (">>" in operand or "<<" in operand):
-                    reg = operand.split(">>")[0].split("<<")[0].replace("%", "")
-                    if (int(reg) < 0 or int(reg) > 15):
-                        print(f"Compilation failed! invalid register: %{reg} @ line {line_number + 1}")
-                        sys.exit(1)
-            if (operand.startswith("#")):
-                operand = operand.replace("#", "")
-                try:
-                    int(operand, 0)
-                except ValueError:
-                    print(f"Compilation failed! invalid immediate: #{operand} @ line {line_number + 1}")
-                    sys.exit(1)
-        except ValueError:
-            print(f"Compilation failed! invalid operand: {operand} @ line {line_number + 1}")
+        elif operand.startswith("#"):
+            try:
+                int(operand.replace("#", ""), 0)
+            except ValueError:
+                print(f"Compilation failed! invalid immediate: {operand} @ line {line_number + 1}")
+                sys.exit(1)
+        else:
+            print(f"Compilation failed! unknown operand or undefined label: {operand} @ line {line_number + 1}")
             sys.exit(1)
-    return translate_dict[split_asm[0]](split_asm[1:])
-
+    try:
+        return translate_dict[split_asm[0]](split_asm[1:])
+    except ValueError as e:
+        print(f"Compilation failed! {e} @ line {line_number + 1}")
+        sys.exit(1)
 
 def main():
     if (len(sys.argv) < 2):
@@ -408,6 +422,7 @@ def main():
             if not label_name:
                 print(f"Compilation failed! empty label name @ line {line_num}")
                 sys.exit(1)
+            if label_name in labels:
                 print(f"Compilation failed! duplicate label: {label_name} @ line {line_num}")
                 sys.exit(1)
             labels[label_name] = pc
@@ -453,7 +468,12 @@ def main():
     
     print("-- Loading into VM --\n")
 
-    run_args = ["../vm/main", output_path]
+    vm_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "vm"))
+    vm_exe = os.path.join(vm_dir, "main.exe" if os.name == "nt" else "main")
+    if not os.path.exists(vm_exe):
+        print(f"VM executable not found at {vm_exe} - build it first (see vm/Makefile).")
+        sys.exit(1)
+    run_args = [vm_exe, output_path]
     if ("--dpr" in sys.argv):
         run_args.append("--dpr")
     if ("--dpm" in sys.argv):

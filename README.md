@@ -16,27 +16,32 @@ I have plans to make this into an actual language!! SupremeBASIC boutta be the m
     * `aa`: Opcode
     * `b-g`: Register/Operand nibbles
     * `hhhhhhhh`: 32-bit immediate (for 8-byte instructions)
-* **Registers:** 16 Registers (`%r0` - `%rF`). All registers store signed integers.
+* **Registers:** 16 registers, all holding signed 32-bit integers. They're stored as raw bits — each instruction decides whether to read them as signed or unsigned, just like a real CPU (`div` vs `sbrk`... I mean `bgs` vs `bgu`).
+
+## Register Notation
+Registers can be written three ways, all equivalent:
+* **Decimal** (what the examples use): `%0` - `%15`. Multi-digit numbers are ALWAYS decimal: `%10` is register ten, not sixteen.
+* **Hex letters:** `%A` - `%F` for registers 10-15 (case-insensitive).
+* **Optional `r` prefix:** `%r0`, `%rE`, `%rF` — the `r` is just for looks.
+
+So `%14` = `%E` = `%rE` = SP, and `%15` = `%F` = `%rF` = RA.
 
 ---
 
 ## Running SupremeASM
 
-
 To assemble SupremeASM code into machine code, run the Python script asm.py in the "assembler" folder, with args: python asm.py <filename.sasm> [--autorun] [--dpr] [--dpm]. 
-
 
 To run machine code, run main.exe in the "vm" folder, with args: ./main <filename> [--dpr] [--dpm]
 
-
-"filename" is the file path to the desired file. "--autorun" specifies if the Python script should immediately run the compiled machine code. Not including this flag means the code will only compile. "--dpr" and "--dpm" tells the VM to dump registers and dump memory after execution into the console, respectively.
+"filename" is the file path to the desired file. "--autorun" specifies if the Python script should immediately run the compiled machine code (works from any directory — it finds the VM on its own). Not including this flag means the code will only compile. "--dpr" and "--dpm" tells the VM to dump registers and dump memory after execution into the console, respectively.
 Including these flags when running the Python script without "--autorun" does nothing.
 
+Compiled .smc files are written to the **executable** folder at the repo root (created automatically).
 
 **IMPORTANT**: All Supreme Machine Code files have file extension .smc, and all SupremeASM v2 files have file extension .sasm. To differentiate from SupremeASM v1, SupremeASM v2 files must have header "@version 2". See examples for uh...examples.
 
-
-**ALSO IMPORTANT**: The makefile probably won't work if you're on a different OS or hardware or something or other tbh I don't really get makefiles, you might have to modify it so the C code compiles. Anyways it works on my machine but YMMV.
+**ALSO IMPORTANT**: The makefile is MSVC/Windows (nmake). The current compiled C code found in vm/main.exe probably won't work if you're on a different OS or hardware or something or other tbh I don't really get makefiles. On Linux/macOS you'll probably have to recompile main.c with like gcc -std=c11 or whatever. Anyways it works on my machine but YMMV.
 
 ## Register Conventions
 While all registers are technically general-purpose, the general conventions are as follows:
@@ -46,13 +51,23 @@ While all registers are technically general-purpose, the general conventions are
 | `%r0 - %r3` | Syscall Arguments / Return Values |
 | `%r4 - %r9` | General Purpose (Compiler Scratch) |
 | `%rA - %rD` | Function Parameters |
-| `%rE` | **SP** (Stack Pointer) |
-| `%rF` | **RA** (Return Address) |
+| `%rE` (`%14`) | **SP** (Stack Pointer) |
+| `%rF` (`%15`) | **RA** (Return Address) |
 
 ---
 
 ## PC
 The program counter points to the next instruction, not the current instruction. Useful to know for jumps and stuff. BUT WE HAVE LABELS SO IT DOESN'T MATTER WHOOOOO
+
+## Assembler Rules & Errors
+The assembler fails with a line number if you:
+* use an unknown instruction, an invalid register (`%G`, `%16`), or a malformed immediate
+* reference an undefined label, or define the same label twice
+* use a branch/load/store offset outside **-32768..32767** (16-bit signed)
+* use a shift amount outside **-128..127** (8-bit signed)
+* use an `ld` immediate outside **-2147483648..4294967295** (so `#0xFFFFFFFF` is legal and loads -1)
+
+No more silent truncation. What you write is what you get, or you get yelled at.
 
 ## Instruction Set Reference
 | Mnemonic | Hex Pattern | Description |
@@ -69,41 +84,56 @@ The program counter points to the next instruction, not the current instruction.
 | `mov %r, %s` | `20rs----` | Copy `%r` -> `%s` |
 | `inc %r` | `21r-----` | `%r = %r + 1` |
 | `dec %r` | `22r-----` | `%r = %r - 1` |
-| `shf %r, #v, %s` | `23rs--vv` | Bitshift `%r` (Right if `v < 0`, Left if `v >= 0`) -> `%s` |
+| `shf %r<<#v, %s` | `23rs--vv` | Shift `%r` left by `v` -> `%s` |
+| `shf %r>>#v, %s` | `23rs--vv` | Shift `%r` right by `v` -> `%s` (**arithmetic**: sign bit preserved, so -8 >> 1 = -4) |
 | `add %r, %s, %o` | `24rso---` | `%o = %r + %s` |
 | `sub %r, %s, %o` | `25rso---` | `%o = %r - %s` |
 | `mul %r, %s, %o` | `26rso---` | `%o = %r * %s` |
-| `div %r, %s, %o` | `27rso---` | `%o = %r / %s` |
-| `mod %r, %s, %o` | `28rso---` | `%o = %r % %s` |
+| `div %r, %s, %o` | `27rso---` | `%o = %r / %s` (signed, traps on divide-by-zero) |
+| `mod %r, %s, %o` | `28rso---` | `%o = %r % %s` (signed, traps on divide-by-zero) |
 | `and %r, %s, %o` | `29rso---` | `%o = %r & %s` |
 | `or %r, %s, %o` | `2Arso---` | `%o = %r \| %s` |
 | `xor %r, %s, %o` | `2Brso---` | `%o = %r ^ %s` |
 | `not %r, %s` | `2Crs----` | `%s = ~%r` |
-| `br #o` | `30--oooo` | Indirect jump: `PC = PC + o` (signed `o`) |
-| `bre %r, %s, #o` | `31rsoooo` | Indirect jump if `%r == %s` |
-| `brn %r, %s, #o` | `32rsoooo` | Indirect jump if `%r != %s` |
-| `bgs %r, %s, #o` | `33rsoooo` | Indirect jump if `%r > %s`|
-| `bgu %r, %s, #o` | `34rsoooo` | Indirect jump if `%r > %s` |
+| `br #o` | `30--oooo` | Relative jump: `PC = PC + o` (signed `o`) |
+| `bre %r, %s, #o` | `31rsoooo` | Relative jump if `%r == %s` |
+| `brn %r, %s, #o` | `32rsoooo` | Relative jump if `%r != %s` |
+| `bgs %r, %s, #o` | `33rsoooo` | Relative jump if `%r > %s` (**signed** compare) |
+| `bgu %r, %s, #o` | `34rsoooo` | Relative jump if `%r > %s` (**unsigned** compare) |
 | `gpc %r, #o` | `35r-oooo` | Load `PC + o` into `%r` (signed `o`) |
-| `jmp %r` | `36r-----` | Direct jump: `PC = %r` |
+| `jmp %r` | `36r-----` | Absolute jump: `PC = %r` |
 | `halt` | `ffffffff` | Terminate VM execution |
+
+Notes:
+* Shift counts are taken mod 32 by the VM (only the low 5 bits matter).
+* All offsets (`#o`) are signed 16-bit. Immediates can be decimal or hex (`#42`, `#0x2A`).
+* Arithmetic wraps at 32 bits, like a real CPU. That's why 13! goes weird.
 
 ---
 
 ## System Operation
 
+### Memory Map (8 MB)
+| Region | Range | Purpose |
+| :--- | :--- | :--- |
+| User | `0x000000 - 0x3FFFFF` | Program (loaded at `0x8`), 1 MB heap (grow it with `sbrk`), your data |
+| OS | `0x400000 - 0x7EFFFF` | Reserved for the OS allocator |
+| Stack | `0x7F0000 - 0x7FFFFF` | Top 64 KB. SP (`%r14`) starts at `0x7FFFFF` and grows down. The allocator never touches it |
+
+On program entry: `%r0` = heap start, `%r14` = top of stack. Every memory access is bounds-checked, so bad addresses exit with "Segmentation Fault" instead of crashing the VM.
+
 ### System Calls (`syscall`)
 **Encoding:** `f0------`
-Arguments are passed via `%r0-%r3`. Results are returned in `%r0`.
+Arguments are passed via `%r0-%r3`. Results are returned in `%r0`. On failure (bad FD, unknown ID), `%r0` = -1.
 
 | ID (`%r0`) | Function | Inputs | Return (`%r0`) |
 | :--- | :--- | :--- | :--- |
-| **0** | `read` | `%r1`: FD, `%r2`: Buffer, `%r3`: Size | Bytes read |
-| **1** | `write` | `%r1`: FD, `%r2`: Buffer, `%r3`: Size | Bytes written |
-| **2** | `get_time`| None | MS since program start |
+| **0** | `read` | `%r1`: FD, `%r2`: Buffer, `%r3`: Size | Bytes read, or -1 |
+| **1** | `write` | `%r1`: FD, `%r2`: Buffer, `%r3`: Size | Bytes written, or -1 |
+| **2** | `get_time`| None | MS since program start (wall clock) |
 | **3** | `sbrk` | `%r3`: Increment size | Old heap end address |
 
-Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors. Reading and writing from other files is planned. Reading from stdin returns each character as its ascii representation.
+Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors — anything else returns -1 (it does NOT silently perform a different syscall anymore lol). Reading and writing from other files is planned. Reading from stdin returns each character as its ascii representation and stops at a newline. A failed `sbrk` returns -1 and also halts the VM with a Segmentation Fault status.
 
 ---
 
@@ -123,7 +153,6 @@ halt;
 ## Example Code
 
 Yeah I'm WAY too lazy to code in Assembly and also since there's no easy way to get input from stdout anymore, idk what really to show. Stuff like Fibonacci sequence, etc. is not very cool when the immediate is hard coded in. Maybe I'll get on it one day, but for now there are not many examples. 
-
 
 Timing Test (for debugging and comparison purposes). Runs a simple loop subtracting 1 from 0x11000000 until it hits 0, and outputs the time in ms it took to run into r0. Use --dpr to see the result:
 ```
@@ -145,7 +174,7 @@ sub %0, %3, %0;
 halt;
 ```
 
-Factorial Calculator. Takes input from user and calculates factorial (only works up to around 12! due to integer overflow)
+Factorial Calculator. Takes input from user and calculates factorial (only works up to around 12! due to integer overflow). Now with correct 0! = 1:
 ```
 @version 2
 // gets user input n and finds n! recursively
@@ -212,7 +241,7 @@ sub %14, %4, %14;
 sti %15, %14+#0;
 ldi %14+#4, %0;
 ld #2, %5;
-bgs %5, %0, end_loop;
+bgs %5, %0, base_case;
 mov %0, %6;
 ld #1, %7;
 sub %6, %7, %6;
@@ -224,6 +253,9 @@ lbl: ret;
 add %14, %4, %14;
 ldi %14+#4, %6;
 mul %0, %6, %0;
+br end_loop;
+lbl: base_case;
+ld #1, %0;
 lbl: end_loop;
 ldi %14+#0, %15;
 add %14, %4, %14;

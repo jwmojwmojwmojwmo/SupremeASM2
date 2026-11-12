@@ -1,15 +1,34 @@
 #include "../include/os.h"
 #include <stdio.h>
 #include <time.h>
+
 #define ONE_MB 1048576
-#define STACK_MAX_SIZE 65536
+#define PAGE_SIZE 4096
+
+/*
+    Layout:
+      0x000000 .. PROGRAM_BASE   unused / guard
+      PROGRAM_BASE .. break      program code (+ padding to a page)
+      break .. USER_LIMIT        heap (grows up via sbrk)
+      USER_LIMIT .. stack_base   guard
+      stack_base .. stack_top    stack (SP grows down from stack_top)
+*/
+
+#define PROGRAM_BASE 0x1000              /* page-aligned load address */
+#define USER_LIMIT   (ONE_MB * 4)        /* heap break may not pass this */
+#define STACK_SIZE   65536               /* top 64 KB reserved for the stack */
 
 static uint32_t main_mem_size;
-static uint32_t heap_start;
-static uint32_t heap_end;
-static uint32_t heap_os_boundary = ONE_MB * 4;
-static uint32_t os_stack_boundary;
-static clock_t start_time;
+static uint32_t heap_break;              /* the program break: current end of heap */
+static uint32_t stack_top;
+static double start_time_ms;
+
+static double now_ms(void)
+{
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+}
 
 void init_os(CPU *cpu, uint32_t mem_size)
 {
@@ -19,16 +38,9 @@ void init_os(CPU *cpu, uint32_t mem_size)
         exit(1);
     }
     main_mem_size = mem_size;
+    stack_top = mem_size - 1;
     init_cpu(cpu);
     init_memory(main_mem_size);
-    Status temp;
-    write_int(0, heap_os_boundary - 12, &temp);
-    write_int(4, 0, &temp);
-    write_int(heap_os_boundary - 4, heap_os_boundary - 12, &temp);
-    os_stack_boundary = main_mem_size - STACK_MAX_SIZE;
-    write_int(heap_os_boundary, os_stack_boundary - heap_os_boundary - 12, &temp);
-    write_int(heap_os_boundary + 4, 0, &temp);
-    write_int(os_stack_boundary - 4, os_stack_boundary - heap_os_boundary - 12, &temp);
 }
 
 uint32_t load_program(char *filename, Status *status)
@@ -45,38 +57,43 @@ uint32_t load_program(char *filename, Status *status)
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
     rewind(file);
-    uint32_t address = allocate_memory(0, (uint32_t)size);
-    uint32_t initial_address = address;
-    int byte;
 
-    // fgetc reads one byte at a time as an int so it can detect EOF
+    if (size < 0 || (uint32_t)size > USER_LIMIT - PROGRAM_BASE)
+    {
+        printf("Program too large for user memory!\n");
+        fclose(file);
+        *status = STATUS_ERR_SEGFAULT;
+        return -1;
+    }
+
+    uint32_t address = PROGRAM_BASE;
+    int byte;
     while ((byte = fgetc(file)) != EOF)
     {
         write_byte(address, (uint8_t)byte, status);
-
         if (*status != STATUS_OK)
         {
-            free_memory(address);
             fclose(file);
             print_formatted(*status);
             return -1;
         }
         address++;
     }
-
     fclose(file);
-    printf("Program loaded successfully starting at 0x%08X (%d)\n", initial_address, initial_address);
+
+    /* heap begins right after the program, rounded up to a page */
+    heap_break = (PROGRAM_BASE + (uint32_t)size + PAGE_SIZE - 1) & ~(uint32_t)(PAGE_SIZE - 1);
+
+    printf("Program loaded successfully starting at 0x%08X (%d)\n", (uint32_t)PROGRAM_BASE, (uint32_t)PROGRAM_BASE);
     *status = STATUS_OK;
-    return initial_address;
+    return PROGRAM_BASE;
 }
 
 Status run_program(CPU *cpu, uint32_t pc)
 {
-    heap_start = allocate_memory(0, ONE_MB); // heap gets 1 MB initially
-    heap_end = heap_start + ONE_MB;
-    cpu->regs[14] = main_mem_size - 1;
-    cpu->regs[0] = heap_start;
-    start_time = clock();
+    cpu->regs[14] = stack_top;      /* SP starts at top of stack, grows down */
+    cpu->regs[0] = heap_break;      /* r0 = start of heap so programs know where it is */
+    start_time_ms = now_ms();
     printf("\n----Running program from 0x%08X (%d)----\n", pc, pc);
     Status status = cpu_run(cpu, pc);
     printf("\n----Program exited at PC: 0x%08X (%d)----\n", cpu->pc, cpu->pc);
@@ -89,61 +106,67 @@ Status handle_syscall(uint32_t *r0, uint32_t fd, uint32_t buffer, uint32_t size)
     Status status = STATUS_OK;
     switch (*r0)
     {
-    case 0:          // read
-        if (fd == 0) // stdin
-        {
-            *r0 = 0; // *r0 returns # of bytes read
-            int c;
-            for (uint32_t i = 0; i < size; i++)
-            {
-                c = getchar();
-                if (c == EOF)
-                    break;
-                write_byte(buffer + i, (uint8_t)c, &status);
-                if (status != STATUS_OK)
-                {
-                    *r0 = -1;
-                    return status;
-                }
-                (*r0)++;
-                if (c == '\n')
-                    break;
-            }
-            return STATUS_OK;
-        }
-    case 1:          // write
-        if (fd == 1) // stdout
-        {
-            *r0 = 0; // *r0 returns # of bytes written
-            uint8_t c;
-            for (uint32_t i = 0; i < size; i++)
-            {
-                c = read_byte(buffer + i, &status);
-                if (status != STATUS_OK)
-                {
-                    *r0 = -1;
-                    return status;
-                }
-                putchar(c);
-                (*r0)++;
-            }
-            fflush(stdout);
-            return STATUS_OK;
-        }
-    case 2: // get_time
-        clock_t current = clock();
-        *r0 = (uint32_t)((current - start_time) * 1000 / CLOCKS_PER_SEC);
-        return STATUS_OK;
-    case 3: // sbrk(size) => extend heap by this much
-        status = extend_memory(heap_start, size);
-        if (status != STATUS_OK)
+    case 0: // read
+        if (fd != 0)
         {
             *r0 = -1;
-            return status;
+            return STATUS_OK;
         }
-        *r0 = heap_end;
-        heap_end += size;
-        return status;
+        *r0 = 0;
+        int c;
+        for (uint32_t i = 0; i < size; i++)
+        {
+            c = getchar();
+            if (c == EOF)
+                break;
+            write_byte(buffer + i, (uint8_t)c, &status);
+            if (status != STATUS_OK)
+            {
+                *r0 = -1;
+                return status;
+            }
+            (*r0)++;
+            if (c == '\n')
+                break;
+        }
+        return STATUS_OK;
+    case 1: // write
+        if (fd != 1)
+        {
+            *r0 = -1;
+            return STATUS_OK;
+        }
+        *r0 = 0;
+        uint8_t ch;
+        for (uint32_t i = 0; i < size; i++)
+        {
+            ch = read_byte(buffer + i, &status);
+            if (status != STATUS_OK)
+            {
+                *r0 = -1;
+                return status;
+            }
+            putchar(ch);
+            (*r0)++;
+        }
+        fflush(stdout);
+        return STATUS_OK;
+    case 2: // get_time
+        *r0 = (uint32_t)(now_ms() - start_time_ms);
+        return STATUS_OK;
+    case 3: // sbrk
+    {
+        uint32_t old = heap_break;
+        uint32_t next = old + size;             
+        if (next < old || next > USER_LIMIT)
+        {
+            *r0 = -1;         
+            return STATUS_OK;
+        }
+        heap_break = next;
+        *r0 = old;                              // sbrk returns the OLD break
+        return STATUS_OK;
+    }
     default:
         *r0 = -1;
         return STATUS_OK;
@@ -176,126 +199,4 @@ void print_formatted(Status status)
         printf("Exited with status: Unknown Error\n");
         break;
     }
-}
-
-/*
-To ensure 4 byte alignment, headers are 8 bytes and footers are 4 bytes.
-Headers: contain size of block in first 4 bytes and if block is free in second 4 bytes (1 for used, 0 for free)
-Footers: contain size of block in 4 bytes
-*/
-
-uint32_t allocate_memory(uint32_t start_address, uint32_t size)
-{
-    Status temp;
-    uint32_t i = 0;
-    while (i < os_stack_boundary)
-    {
-        uint32_t block_size = read_int(i, &temp);
-        if (is_memory_block_free(i) && block_size >= size && i >= start_address)
-        {
-            // split block if large enough
-            if (block_size > size + 12)
-            {
-                write_int(i, size, &temp);
-                write_int(i + 4, 1, &temp);
-                write_int(i + 8 + size, size, &temp);
-                write_int(i + 8 + size + 4, block_size - size - 12, &temp);
-                write_int(i + 8 + size + 4 + 4, 0, &temp);
-                write_int(i + 8 + block_size, block_size - size - 12, &temp);
-            }
-            else
-            {
-                write_int(i + 4, 1, &temp);
-            }
-            return i + 8;
-        }
-        i += block_size + 12;
-    }
-    return -1; // no block large enough`
-}
-
-Status extend_memory(uint32_t address, uint32_t size)
-{
-    Status temp;
-    uint32_t next_block_header_address = read_int(address - 8, &temp) + address + 4;
-    if (next_block_header_address >= heap_os_boundary)
-    {
-        return STATUS_ERR_SEGFAULT;
-    }
-    uint32_t next_block_size = read_int(next_block_header_address, &temp);
-    if (is_memory_block_free(next_block_header_address) && next_block_size >= size)
-    {
-        if (next_block_size > size + 12)
-        {
-            write_int(next_block_header_address, size, &temp);
-            write_int(next_block_header_address + 4, 1, &temp);
-            write_int(next_block_header_address + 8 + size, size, &temp);
-            write_int(next_block_header_address + 8 + size + 4, next_block_size - size - 12, &temp);
-            write_int(next_block_header_address + 8 + size + 4 + 4, 0, &temp);
-            write_int(next_block_header_address + 8 + next_block_size, next_block_size - size - 12, &temp);
-        }
-        coalesce(address - 8, next_block_header_address);
-        return STATUS_OK;
-    }
-    return STATUS_ERR_SEGFAULT;
-}
-
-void free_memory(uint32_t address)
-{
-    Status temp;
-    bool coalesced_before = false;
-    write_int(address - 4, 0, &temp);
-
-    // BACKWARD COALESCE
-    uint32_t prev_block_header_address;
-    if (address > 8)
-    {
-        // Calculate it safely inside the check
-        prev_block_header_address = address - 12 - read_int(address - 12, &temp) - 8;
-
-        if (read_int(prev_block_header_address + 4, &temp) == 0)
-        {
-            bool both_in_user = (address - 8 < heap_os_boundary && prev_block_header_address < heap_os_boundary);
-            bool both_in_os = (address - 8 >= heap_os_boundary && prev_block_header_address >= heap_os_boundary);
-
-            if (both_in_user || both_in_os)
-            {
-                coalesce(prev_block_header_address, address - 8);
-                coalesced_before = true;
-            }
-        }
-    }
-    // FORWARD COALESCE
-    uint32_t next_block_header_address = read_int(address - 8, &temp) + address + 4;
-    if (next_block_header_address < os_stack_boundary && read_int(next_block_header_address + 4, &temp) == 0)
-    {
-        bool both_in_user = (address - 8 < heap_os_boundary && next_block_header_address < heap_os_boundary);
-        bool both_in_os = (address - 8 >= heap_os_boundary && next_block_header_address >= heap_os_boundary);
-
-        if (both_in_user || both_in_os)
-        {
-            if (coalesced_before)
-            {
-                coalesce(prev_block_header_address, next_block_header_address);
-            }
-            else
-            {
-                coalesce(address - 8, next_block_header_address);
-            }
-        }
-    }
-}
-
-void coalesce(uint32_t first_header_address, uint32_t second_header_address)
-{
-    Status temp;
-    uint32_t new_size = read_int(first_header_address, &temp) + read_int(second_header_address, &temp) + 12;
-    write_int(first_header_address, new_size, &temp);
-    write_int(first_header_address + 8 + new_size, new_size, &temp);
-}
-
-bool is_memory_block_free(uint32_t header)
-{
-    Status temp;
-    return read_int(header + 4, &temp) == 0;
 }

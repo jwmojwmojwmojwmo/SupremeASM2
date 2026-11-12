@@ -1,25 +1,63 @@
 #ifndef MEMORY_H
 #define MEMORY_H
 
-// use uint for universal int (idk how much that matters lowk)
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 #include "common.h"
 
-// Initialize 1mb of main memory, setting every value inside to 0
+// the ONE real copy of these lives in memory.c
+extern uint8_t *memory;
+extern uint32_t memory_size;
+
+// called once at startup — stays a normal function
 void init_memory(uint32_t size);
 
-// Write a single byte into memory 
-void write_byte(uint32_t address, uint8_t value, Status* status);
+// inline
+static inline void write_byte(uint32_t address, uint8_t value, Status *status)
+{
+    if (address >= memory_size)
+    {
+        *status = STATUS_ERR_SEGFAULT;
+        return;
+    }
+    memory[address] = value;
+}
 
-// Read a single byte from memory
-uint8_t read_byte(uint32_t address, Status* status);
+static inline uint8_t read_byte(uint32_t address, Status *status)
+{
+    if (address >= memory_size)
+    {
+        *status = STATUS_ERR_SEGFAULT;
+        return 0;
+    }
+    return memory[address];
+}
 
-// Write an int (4 byte value) from memory, starting at address
-void write_int(uint32_t address, uint32_t value, Status* status);
+static inline void write_int(uint32_t address, uint32_t value, Status *status)
+{
+    if (address > (memory_size - 4))
+    {
+        *status = STATUS_ERR_SEGFAULT;
+        return;
+    }
+    memory[address]     = (value >> 24) & 0xFF;
+    memory[address + 1] = (value >> 16) & 0xFF;
+    memory[address + 2] = (value >> 8) & 0xFF;
+    memory[address + 3] = value & 0xFF;
+}
 
-// Read an int (4 byte value) from memory, starting at address
-uint32_t read_int(uint32_t address, Status* status);
+static inline uint32_t read_int(uint32_t address, Status *status)
+{
+    if (address > (memory_size - 4))
+    {
+        *status = STATUS_ERR_SEGFAULT;
+        return 0;
+    }
+    return ((uint32_t)memory[address] << 24) |
+           ((uint32_t)memory[address + 1] << 16) |
+           ((uint32_t)memory[address + 2] << 8) |
+           (uint32_t)memory[address + 3];
+}
 
 #endif
