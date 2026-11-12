@@ -22,7 +22,7 @@ I have plans to make this into an actual language!! SupremeBASIC boutta be the m
 Registers can be written three ways, all equivalent:
 * **Decimal** (what the examples use): `%0` - `%15`. Multi-digit numbers are ALWAYS decimal: `%10` is register ten, not sixteen.
 * **Hex letters:** `%A` - `%F` for registers 10-15 (case-insensitive).
-* **Optional `r` prefix:** `%r0`, `%rE`, `%rF` — the `r` is just for looks.
+* **Optional `r` prefix:** `%r0`, `%rE`, `%rF`.
 
 So `%14` = `%E` = `%rE` = SP, and `%15` = `%F` = `%rF` = RA.
 
@@ -67,8 +67,6 @@ The assembler fails with a line number if you:
 * use a shift amount outside **-128..127** (8-bit signed)
 * use an `ld` immediate outside **-2147483648..4294967295** (so `#0xFFFFFFFF` is legal and loads -1)
 
-No more silent truncation. What you write is what you get, or you get yelled at.
-
 ## Instruction Set Reference
 | Mnemonic | Hex Pattern | Description |
 | :--- | :--- | :--- |
@@ -107,7 +105,6 @@ No more silent truncation. What you write is what you get, or you get yelled at.
 Notes:
 * Shift counts are taken mod 32 by the VM (only the low 5 bits matter).
 * All offsets (`#o`) are signed 16-bit. Immediates can be decimal or hex (`#42`, `#0x2A`).
-* Arithmetic wraps at 32 bits, like a real CPU. That's why 13! goes weird.
 
 ---
 
@@ -116,9 +113,9 @@ Notes:
 ### Memory Map (8 MB)
 | Region | Range | Purpose |
 | :--- | :--- | :--- |
-| User | `0x000000 - 0x3FFFFF` | Program (loaded at `0x8`), 1 MB heap (grow it with `sbrk`), your data |
+| User | `0x000000 - 0x3FFFFF` | Program (loaded at `0x8`), 1 MB heap (grow it with `sbrk`)|
 | OS | `0x400000 - 0x7EFFFF` | Reserved for the OS allocator |
-| Stack | `0x7F0000 - 0x7FFFFF` | Top 64 KB. SP (`%r14`) starts at `0x7FFFFF` and grows down. The allocator never touches it |
+| Stack | `0x7F0000 - 0x7FFFFF` | Top 64 KB. SP (`%r14`) starts at `0x7FFFFF` and grows down.|
 
 On program entry: `%r0` = heap start, `%r14` = top of stack. Every memory access is bounds-checked, so bad addresses exit with "Segmentation Fault" instead of crashing the VM.
 
@@ -174,7 +171,7 @@ sub %0, %3, %0;
 halt;
 ```
 
-Factorial Calculator. Takes input from user and calculates factorial (only works up to around 12! due to integer overflow). Now with correct 0! = 1:
+Factorial Calculator. Takes input from user and calculates factorial (only works up to around 12! due to integer overflow).
 ```
 @version 2
 // gets user input n and finds n! recursively
