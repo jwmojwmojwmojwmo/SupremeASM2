@@ -4,14 +4,8 @@ import java.util.Set;
 
 public final class TokenType {
     public enum Type {
-        KEYWORD,
-        IDENTIFIER,
-        LITERAL,
-        OPERATOR,
-        UNKNOWN;
+        KEYWORD, IDENTIFIER, NUMBER, OPERATOR, EOF
     }
 
-    public static final Set<String> KEYWORDS = Set.of(
-            "PRINT", "ASM");
-
+    public static final Set<String> KEYWORDS = Set.of("DECLARE", "SIZE");
 }
