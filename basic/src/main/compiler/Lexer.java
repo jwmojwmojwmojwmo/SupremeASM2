@@ -3,6 +3,7 @@ package basic.src.main.compiler;
 import java.util.ArrayList;
 import java.util.List;
 
+// Represents the Lexer in the compiler. The job is to turn a string of source code into a list of tokens
 public class Lexer {
     private String src;
     private int pos;

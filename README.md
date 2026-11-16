@@ -6,6 +6,8 @@ Again, built for learning purposes.
 
 I have plans to make this into an actual language!! SupremeBASIC boutta be the most goated language ever (no it wont)
 
+Want to see the development of SupremeBASIC? See BASIC.md, and run basic/src/main/SupremeBasicCompiler.java to begin compiling SupremeBASIC! (Don't ask why I have so many different languages ig I'm just #whimsical)
+
 # SupremeASM v2 Documentation
 
 **Architecture Overview**

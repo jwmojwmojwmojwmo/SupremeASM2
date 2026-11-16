@@ -1,5 +1,8 @@
 package basic.src.main.compiler;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import basic.src.main.exceptions.BadParseException;
@@ -9,15 +12,18 @@ public class SupremeCompiler {
     int compilerVersion;
     Lexer lexer;
     Parser parser;
-
+    Sema sema;
+    CodeGen codeGen;
 
     public SupremeCompiler(int version) {
         compilerVersion = version;
         lexer = new Lexer();
         parser = new Parser();
+        sema = new Sema();
+        codeGen = new CodeGen();
     }
 
-    public void compile(String sourceCode) {
+    public boolean compile(String sourceCode, String fileName) {
         System.out.println("Compiling SupremeBASIC version " + compilerVersion + " source code:");
         List<Token> tokens = lexer.tokenize(sourceCode);
         System.out.println("Successfully tokenized " + tokens.size() + " tokens:");
@@ -26,18 +32,37 @@ public class SupremeCompiler {
         }
         System.out.println("Parsing tokens into AST...");
         parser.setTokens(tokens);
-        Node program;
+        Node.Program program;
         try {
             program = parser.parseProgram();
         } catch (BadParseException e) {
             System.err.println("Error parsing program: " + e.getMessage());
-            return;
+            return false;
         }
         System.out.println("Successfully parsed program:");
         print(program, 0);
+        System.out.println("Performing semantic analysis...");
+        Sema.Result semaResult;
+        try {
+            semaResult = sema.analyze(program);
+        } catch (Exception e) {
+            System.err.println("Error in semantic analysis: " + e.getMessage());
+            return false;
+        }
+        System.out.println("Semantic analysis complete.");
+        System.out.println("Generating SupremeASM...");
+        String asm = codeGen.generate(program, semaResult);
+        try {
+            Files.writeString(Path.of(fileName + ".sasm"), asm);
+            System.out.println("Generated SupremeASM in " + fileName + ".sasm");
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+        return true;
     }
 
-        // ---- temporary test ----
+    // ---- temporary test ----
 
     public void print(Node n, int depth) {
         String pad = "  ".repeat(depth);
@@ -47,14 +72,32 @@ public class SupremeCompiler {
                 for (Node s : p.statements())
                     print(s, depth + 1);
             }
-            case Node.DeclareStatement d ->
-                System.out.println(pad + "DECLARE " + d.name() + " size=" + d.size());
-            case Node.AssignStatement a -> {
+            case Node.TypeDeclaration t ->
+                System.out.println(pad + "DECLARE TYPE " + t.name() + " size=" + t.size());
+            case Node.VariableDeclaration d ->
+                System.out.println(pad + "DECLARE VARIABLE " + d.name() + " type=" + d.typeName());
+            case Node.ValueAssignment a -> {
                 System.out.println(pad + "ASSIGN " + a.name());
                 print(a.value(), depth + 1);
             }
             case Node.NumberLiteral num ->
                 System.out.println(pad + "NUMBER " + num.value());
+            case Node.VariableReference v ->
+                System.out.println(pad + "VARIABLE " + v.name());
+            case Node.StructField f ->
+                System.out.println(pad + "FIELD " + f.name() + " type=" + f.typeName());
+            case Node.StructDeclaration s -> {
+                System.out.println(pad + "DECLARE STRUCT " + s.name());
+                for (Node.StructField f : s.fields())
+                    print(f, depth + 1);
+            }
+            case Node.FieldValueAssignment fa -> {
+                System.out.println(pad + "ASSIGN FIELD " + fa.fieldName() + " OF STRUCT " + fa.structName());
+                print(fa.value(), depth + 1);
+            }
+            case Node.FieldVariableReference fvr -> {
+                System.out.println(pad + "FIELD VARIABLE " + fvr.fieldName() + " OF STRUCT " + fvr.structName());
+            }
         }
     }
 }

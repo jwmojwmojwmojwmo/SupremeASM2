@@ -8,16 +8,43 @@ public sealed interface Node {
     record Program(List<Node> statements) implements Node {
     }
 
-    // Represents the declaration statement, declaring a variable with a name and
-    // size
-    record DeclareStatement(String name, int size, int line) implements Node {
+    // Represents the variable declaration statement, declaring a variable with a
+    // name and type (ex: "DECLARE VARIABLE x AS int")
+    record VariableDeclaration(String name, String typeName, int line) implements Node {
     }
 
-    // Represents an assignment statement, assigning a value to a variable
-    record AssignStatement(String name, Node value, int line) implements Node {
+    // Represents the type declaration statement, declaring a type with a name and
+    // size (ex: DECLARE TYPE int SIZE 4)
+    record TypeDeclaration(String name, int size, int line) implements Node {
     }
 
-    // Represents a literal number
+    // Represents an assignment statement, assigning a value to a variable (ex: x <-
+    // 42)
+    record ValueAssignment(String name, Node value, int line) implements Node {
+    }
+
+    // Represents as assignment statement of a value to a field of a struct (ex: x
+    // OF Point <- 42)
+    record FieldValueAssignment(String structName, String fieldName, Node value, int line) implements Node {
+    }
+
+    // Represents a literal number (ex: 42)
     record NumberLiteral(long value, int line) implements Node {
+    }
+
+    // Represents a reference of an existing variable (ex: the "x" in y <- x)
+    record VariableReference(String name, int line) implements Node {
+    }
+    // Represents a reference of an existing field of a struct (ex: the "x" in y <- x OF Point)
+    record FieldVariableReference(String structName, String fieldName, int line) implements Node {
+    }
+
+    // Represents a field inside a struct (ex: "x AS int;")
+    record StructField(String name, String typeName, int line) implements Node {
+    }
+
+    // Represents the struct declaration, declaring a struct with a name and fields
+    // (ex: DECLARE STRUCT Point THEN fields END)
+    record StructDeclaration(String name, List<StructField> fields, int line) implements Node {
     }
 }
