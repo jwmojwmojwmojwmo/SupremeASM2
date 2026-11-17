@@ -122,11 +122,11 @@ public class Parser {
             Token fName = expect(TokenType.Type.IDENTIFIER);
             expectKw("AS");
             Token fType = expect(TokenType.Type.IDENTIFIER);
-            expectOp(";"); 
+            expectOp(";");
             fields.add(new Node.StructField(fName.value(), fType.value(), fName.line()));
         }
         advance();
-        expectOp(";"); 
+        expectOp(";");
 
         return new Node.StructDeclaration(name.value(), fields, name.line());
     }
@@ -162,7 +162,17 @@ public class Parser {
     }
 
     private Node parseValue() {
-        if (is(TokenType.Type.NUMBER)) {
+        if (isOp("-")) {
+            advance(); // consume '-'
+            Token n = expect(TokenType.Type.NUMBER);
+            long number;
+            try {
+                number = -Long.parseLong(n.value()); // Negate it!
+            } catch (NumberFormatException e) {
+                throw new BadParseException("number out of range: -" + n.value(), n.line());
+            }
+            return new Node.NumberLiteral(number, n.line());
+        } else if (is(TokenType.Type.NUMBER)) {
             Token n = advance();
             long number;
             try {

@@ -65,10 +65,4 @@ public class Lexer {
         tokens.add(new Token(TokenType.Type.EOF, "", line));
         return tokens;
     }
-
-    // temporary test harness
-    public static void main(String[] args) {
-        String src = "DECLARE x SIZE 4;\nx <- 5;  // hi\n";
-        for (Token t : new Lexer().tokenize(src)) System.out.println(t);
-    }
 }
