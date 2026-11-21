@@ -146,33 +146,65 @@ public class Parser {
     private Node parseAssign() {
         Token name = advance();
         expectOp("<-");
-        Node value = parseValue();
+        Node value = parseExpression();
         expectOp(";");
         return new Node.ValueAssignment(name.value(), value, name.line());
     }
 
     private Node parseFieldAssign() {
         Token fieldName = advance();
-        expectKw("OF"); // Cleaned up!
+        expectKw("OF");
         Token varName = expect(TokenType.Type.IDENTIFIER);
         expectOp("<-");
-        Node value = parseValue();
+        Node value = parseExpression();
         expectOp(";");
         return new Node.FieldValueAssignment(varName.value(), fieldName.value(), value, varName.line());
     }
 
-    private Node parseValue() {
+    // follows BEDMAS
+    // expression = term (('+' | '-') term)*
+    private Node parseExpression() {
+        Node left = parseTerm();
+        while (isOp("+") || isOp("-")) {
+            Token op = advance();
+            Node right = parseTerm();
+            left = fold(op.value(), left, right, op.line());
+        }
+        return left;
+    }
+
+    // term = factor (('*' | '/' | '%') factor)*
+    private Node parseTerm() {
+        Node left = parseFactor();
+        while (isOp("*") || isOp("/") || isOp("%")) {
+            Token op = advance();
+            Node right = parseFactor();
+            left = fold(op.value(), left, right, op.line());
+        }
+        return left;
+    }
+
+    // factor = NUMBER | IDENTIFIER [OF IDENTIFIER] | '(' expression ')' | '-'
+    // NUMBER
+    private Node parseFactor() {
         if (isOp("-")) {
-            advance(); // consume '-'
+            advance();
             Token n = expect(TokenType.Type.NUMBER);
             long number;
             try {
-                number = -Long.parseLong(n.value()); // Negate it!
+                number = -Long.parseLong(n.value());
             } catch (NumberFormatException e) {
                 throw new BadParseException("number out of range: -" + n.value(), n.line());
             }
             return new Node.NumberLiteral(number, n.line());
-        } else if (is(TokenType.Type.NUMBER)) {
+        }
+        if (isOp("(")) {
+            advance();
+            Node inner = parseExpression();
+            expectOp(")");
+            return inner;
+        }
+        if (is(TokenType.Type.NUMBER)) {
             Token n = advance();
             long number;
             try {
@@ -181,18 +213,46 @@ public class Parser {
                 throw new BadParseException("number out of range: " + n.value(), n.line());
             }
             return new Node.NumberLiteral(number, n.line());
-        } else if (is(TokenType.Type.IDENTIFIER)) {
+        }
+        if (is(TokenType.Type.IDENTIFIER)) {
             Token first = advance();
             if (isKw("OF")) {
                 advance();
                 Token varName = expect(TokenType.Type.IDENTIFIER);
                 return new Node.FieldVariableReference(varName.value(), first.value(), first.line());
-            } else {
-                return new Node.VariableReference(first.value(), first.line());
             }
-        } else {
-            throw new BadParseException("expected a number or a variable name", peek().line());
+            return new Node.VariableReference(first.value(), first.line());
         }
+        throw new BadParseException("expected a number, variable, or '('", peek().line());
+    }
+
+    // If both sides are literals, compute now; otherwise build a BinaryExpression.
+    private Node fold(String op, Node left, Node right, int line) {
+        if (left instanceof Node.NumberLiteral l && right instanceof Node.NumberLiteral r) {
+            long result;
+            try {
+                result = switch (op) {
+                    case "+" -> Math.addExact(l.value(), r.value());
+                    case "-" -> Math.subtractExact(l.value(), r.value());
+                    case "*" -> Math.multiplyExact(l.value(), r.value());
+                    case "/" -> {
+                        if (r.value() == 0)
+                            throw new BadParseException("division by zero in constant expression", line);
+                        yield l.value() / r.value();
+                    }
+                    case "%" -> {
+                        if (r.value() == 0)
+                            throw new BadParseException("division by zero in constant expression", line);
+                        yield l.value() % r.value();
+                    }
+                    default -> throw new IllegalStateException("unknown operator " + op);
+                };
+            } catch (ArithmeticException e) {
+                throw new BadParseException("constant expression out of range", line);
+            }
+            return new Node.NumberLiteral(result, line);
+        }
+        return new Node.ArithmeticExpression(op, left, right, line);
     }
 
     private int size(Token t) {

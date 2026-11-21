@@ -35,7 +35,9 @@ public sealed interface Node {
     // Represents a reference of an existing variable (ex: the "x" in y <- x)
     record VariableReference(String name, int line) implements Node {
     }
-    // Represents a reference of an existing field of a struct (ex: the "x" in y <- x OF Point)
+
+    // Represents a reference of an existing field of a struct (ex: the "x" in y <-
+    // x OF Point)
     record FieldVariableReference(String structName, String fieldName, int line) implements Node {
     }
 
@@ -46,5 +48,9 @@ public sealed interface Node {
     // Represents the struct declaration, declaring a struct with a name and fields
     // (ex: DECLARE STRUCT Point THEN fields END)
     record StructDeclaration(String name, List<StructField> fields, int line) implements Node {
+    }
+
+    // Represents an arithmetic expression (ex: a + b * 2 => Node(a) + Node(b * 2))
+    record ArithmeticExpression(String op, Node left, Node right, int line) implements Node {
     }
 }

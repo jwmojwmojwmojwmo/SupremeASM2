@@ -3,7 +3,7 @@
 ## 1. Core Philosophy
 * **"DECLARE Everything":** All language constructs (variables, types, structs, and eventually functions/blocks) use the `DECLARE` keyword or consistent block syntax.
 * **Block Syntax:** Multi-line blocks are unified using `THEN ... END;` (e.g., structs, eventually IF/FOR/WHILE).
-* **Option B Literals:** Literals (like `5`) are untyped mathematical values. They adopt the size and type of the target variable they are assigned to.
+* **Literals:** Literals (like `5`) are untyped mathematical values. They adopt the size and type of the target variable they are assigned to as long as the target variable is big enough to hold it and is a primitive type (not a struct or something else).
 * **Nominal Typing:** Types are identified by name, not just size. A 4-byte `int` cannot be assigned to a 4-byte `str`.
 * **Signed-Only Math (Currently):** All bounds checking assumes signed two's-complement integers. (No `ubyte`/unsigned types yet).
 
@@ -26,6 +26,7 @@ DECLARE STRUCT Point THEN
     y AS int;
 END;
 ```
+Struct fields must use types declared earlier in the file.
 
 ## 3. Variables
 Variables are allocated on the stack using a bump allocator. They must be explicitly typed.
@@ -58,7 +59,6 @@ p2 <- p1;
 
 ## 5. Looking Ahead
 ### Features are planned to be added in the following order:
-* Negative Literals
 * Unsigned Types
 * Math/Expressions
 * Print through stdout

@@ -23,27 +23,14 @@ public class CodeGen {
                     emitRHS(a.value(), v_tgt, sema);
                 }
                 case Node.FieldValueAssignment fa -> {
-                    Sema.Variable v = sema.vars().get(fa.structName());
-                    Sema.FieldLayout field = v.type().getField(fa.fieldName());
-                    int finalOffset = v.offset() + field.offset();
-
-                    // Create a "fake" variable record for the target field
-                    Sema.Variable fakeTgt = new Sema.Variable(
-                            fa.structName() + "." + fa.fieldName(),
-                            field.type(),
-                            finalOffset,
-                            fa.line());
-
-                    emitRHS(fa.value(), fakeTgt, sema);
+                    Sema.Variable tgt = fieldVar(fa.structName(), fa.fieldName(), fa.line(), sema);
+                    emitRHS(fa.value(), tgt, sema);
                 }
                 case Node.VariableDeclaration d -> {
-
                 }
                 case Node.TypeDeclaration t -> {
-
-                 }
+                }
                 case Node.StructDeclaration s -> {
-
                 }
                 default -> System.out.println("Warning: Unhandled statement: " + n);
             }
@@ -58,22 +45,81 @@ public class CodeGen {
     private void emitRHS(Node value, Sema.Variable v_tgt, Sema.Result sema) {
         if (value instanceof Node.NumberLiteral num) {
             emitAssignLiteral(num.value(), v_tgt);
-        } else if (value instanceof Node.VariableReference ref) {
-            Sema.Variable v_src = sema.vars().get(ref.name());
-            emitAssignVariable(v_src, v_tgt);
-        } else if (value instanceof Node.FieldVariableReference ref) {
-            Sema.Variable v_src = sema.vars().get(ref.structName());
-            Sema.FieldLayout srcField = v_src.type().getField(ref.fieldName());
-            
-            // Create a "fake" variable for the source field
-            Sema.Variable fakeSrc = new Sema.Variable(
-                    v_src.name() + "." + srcField.name(),
-                    srcField.type(),
-                    v_src.offset() + srcField.offset(),
-                    ref.line()
-            );
-            emitAssignVariable(fakeSrc, v_tgt);
+        } else if (value instanceof Node.ArithmeticExpression expr) {
+            int reg = evalExpr(expr, 4, sema);
+            emitStoreReg(reg, v_tgt); 
+        } else {
+            // VariableReference or FieldVariableReference: copy from that location
+            emitAssignVariable(locationOf(value, sema), v_tgt);
         }
+    }
+
+    // Evaluate expression into scratch register `reg`; result lands in `reg`.
+    private int evalExpr(Node value, int reg, Sema.Result sema) {
+        if (reg > 9)
+            throw new IllegalStateException("expression too complex (out of scratch registers)");
+
+        if (value instanceof Node.NumberLiteral num) {
+            emit("ld #" + num.value() + ", %" + reg + ";");
+            return reg;
+        }
+        if (value instanceof Node.ArithmeticExpression expr) {
+            evalExpr(expr.left(), reg, sema);       // left  -> reg
+            evalExpr(expr.right(), reg + 1, sema);  // right -> reg+1
+            String mnemonic = switch (expr.op()) {
+                case "+" -> "add";
+                case "-" -> "sub";
+                case "*" -> "mul";
+                case "/" -> "div";
+                case "%" -> "mod";
+                default -> throw new IllegalStateException("unknown operator " + expr.op());
+            };
+            emit(mnemonic + " %" + reg + ", %" + (reg + 1) + ", %" + reg + ";");
+            return reg;
+        }
+        // Anything else is a location (variable or field)
+        Sema.Variable v = locationOf(value, sema);
+        emitLoadAt(v.type().size(), v.offset(), reg);
+        return reg;
+    }
+
+    // Resolve a field access to a "fake variable" (its size + offset in the frame).
+    private Sema.Variable fieldVar(String structName, String fieldName, int line, Sema.Result sema) {
+        Sema.Variable v = sema.vars().get(structName);
+        Sema.FieldLayout field = v.type().getField(fieldName);
+        return new Sema.Variable(v.name() + "." + field.name(), field.type(),
+                v.offset() + field.offset(), line);
+    }
+
+    // Resolve a value node that names a memory location (variable or field).
+    private Sema.Variable locationOf(Node value, Sema.Result sema) {
+        if (value instanceof Node.VariableReference ref)
+            return sema.vars().get(ref.name());
+        if (value instanceof Node.FieldVariableReference ref)
+            return fieldVar(ref.structName(), ref.fieldName(), ref.line(), sema);
+        throw new IllegalArgumentException("not a location: " + value);
+    }
+
+    // Load a stack value into a register (1 or 4-byte types only).
+    private void emitLoadAt(int size, int offset, int reg) {
+        if (size == 1)
+            emit("ldb %14+#" + offset + ", %" + reg + ";");
+        else if (size == 4)
+            emit("ldi %14+#" + offset + ", %" + reg + ";");
+        else
+            throw new IllegalStateException("cannot load " + size + "-byte type into a register");
+    }
+
+    // Store a register into the target (1 or 4-byte types only).
+    private void emitStoreReg(int reg, Sema.Variable v) {
+        int size = v.type().size();
+        int off = v.offset();
+        if (size == 1)
+            emit("stb %" + reg + ", %14+#" + off + ";");
+        else if (size == 4)
+            emit("sti %" + reg + ", %14+#" + off + ";");
+        else
+            throw new IllegalStateException("cannot store register into " + size + "-byte type");
     }
 
     // store `value` into v, filling ALL v.size() bytes, big-endian
@@ -126,31 +172,28 @@ public class CodeGen {
 
     private void emitAssignVariable(Sema.Variable v_src, Sema.Variable v_tgt) {
         int size = v_src.type().size();
+        if (size == 1 || size == 4) {
+            emitLoadAt(size, v_src.offset(), 5);
+            emitStoreReg(5, v_tgt);
+            return;
+        }
+
+        // Optimized chunk copy: 4 bytes at a time, then the remainder
         int src_off = v_src.offset();
         int tgt_off = v_tgt.offset();
+        int full_chunks = size / 4;
+        for (int i = 0; i < full_chunks; i++) {
+            int chunk_off = i * 4;
+            emit("ldi %14+#" + (src_off + chunk_off) + ", %5;");
+            emit("sti %5, %14+#" + (tgt_off + chunk_off) + ";");
+        }
 
-        if (size == 1) {
-            emit("ldb %14+#" + src_off + ", %5;");
-            emit("stb %5, %14+#" + tgt_off + ";");
-        } else if (size == 4) {
-            emit("ldi %14+#" + src_off + ", %5;");
-            emit("sti %5, %14+#" + tgt_off + ";");
-        } else {
-            // Optimized chunk copy: 4 bytes at a time, then the remainder
-            int full_chunks = size / 4;
-            for (int i = 0; i < full_chunks; i++) {
-                int chunk_off = i * 4;
-                emit("ldi %14+#" + (src_off + chunk_off) + ", %5;");
-                emit("sti %5, %14+#" + (tgt_off + chunk_off) + ";");
-            }
-
-            int rem_bytes = size % 4;
-            int rem_start = full_chunks * 4;
-            for (int i = 0; i < rem_bytes; i++) {
-                int rem_off = rem_start + i;
-                emit("ldb %14+#" + (src_off + rem_off) + ", %5;");
-                emit("stb %5, %14+#" + (tgt_off + rem_off) + ";");
-            }
+        int rem_bytes = size % 4;
+        int rem_start = full_chunks * 4;
+        for (int i = 0; i < rem_bytes; i++) {
+            int rem_off = rem_start + i;
+            emit("ldb %14+#" + (src_off + rem_off) + ", %5;");
+            emit("stb %5, %14+#" + (tgt_off + rem_off) + ";");
         }
     }
 

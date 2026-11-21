@@ -6,7 +6,7 @@ Again, built for learning purposes.
 
 I have plans to make this into an actual language!! SupremeBASIC boutta be the most goated language ever (no it wont)
 
-Want to see the development of SupremeBASIC? See BASIC.md, and run basic/src/main/SupremeBasicCompiler.java to begin compiling SupremeBASIC! (Don't ask why I have so many different languages ig I'm just #whimsical)
+Want to see the development of SupremeBASIC? See BASIC.md, and run basic/src/SupremeBasicCompiler.java to begin compiling SupremeBASIC! (Don't ask why I have so many different languages ig I'm just #whimsical)
 
 # SupremeASM v2 Documentation
 
@@ -18,7 +18,7 @@ Want to see the development of SupremeBASIC? See BASIC.md, and run basic/src/mai
     * `aa`: Opcode
     * `b-g`: Register/Operand nibbles
     * `hhhhhhhh`: 32-bit immediate (for 8-byte instructions)
-* **Registers:** 16 registers, all holding signed 32-bit integers. They're stored as raw bits — each instruction decides whether to read them as signed or unsigned, just like a real CPU (`div` vs `sbrk`... I mean `bgs` vs `bgu`).
+* **Registers:** 16 registers, all holding 32-bit integers. They're stored as raw bits, each instruction decides whether to read them as signed or unsigned.
 
 ## Register Notation
 Registers can be written three ways, all equivalent:
@@ -84,7 +84,7 @@ The assembler fails with a line number if you:
 | `mov %r, %s` | `20rs----` | Copy `%r` -> `%s` |
 | `inc %r` | `21r-----` | `%r = %r + 1` |
 | `dec %r` | `22r-----` | `%r = %r - 1` |
-| `shf %r<<#v, %s` | `23rs--vv` | Shift `%r` left by `v` -> `%s` |
+| `shf %r<<#v, %s` | `23rs--vv` | Shift `%r` left by `v` -> `%s` | TODO turn into register
 | `shf %r>>#v, %s` | `23rs--vv` | Shift `%r` right by `v` -> `%s` (**arithmetic**: sign bit preserved, so -8 >> 1 = -4) |
 | `add %r, %s, %o` | `24rso---` | `%o = %r + %s` |
 | `sub %r, %s, %o` | `25rso---` | `%o = %r - %s` |
@@ -115,9 +115,11 @@ Notes:
 ### Memory Map (8 MB)
 | Region | Range | Purpose |
 | :--- | :--- | :--- |
-| User | `0x000000 - 0x3FFFFF` | Program (loaded at `0x8`), 1 MB heap (grow it with `sbrk`)|
-| OS | `0x400000 - 0x7EFFFF` | Reserved for the OS allocator |
-| Stack | `0x7F0000 - 0x7FFFFF` | Top 64 KB. SP (`%r14`) starts at `0x7FFFFF` and grows down.|
+| Guard | `0x000000 - 0x000FFF` | Unused guard page |
+| Program | `0x001000 - heap start` | Loaded at `0x1000` (page-aligned) |
+| Heap | `heap start - 0x3FFFFF` | Begins right after the program, rounded up to a 4 KB page; grows up via `sbrk` |
+| Guard | `0x400000 - 0x7EFFFF` | Unmapped gap between user memory and the stack |
+| Stack | `0x7F0000 - 0x7FFFFF` | SP (`%r14`) starts at `0x7FFFFF` and grows down. |
 
 On program entry: `%r0` = heap start, `%r14` = top of stack. Every memory access is bounds-checked, so bad addresses exit with "Segmentation Fault" instead of crashing the VM.
 
@@ -132,8 +134,7 @@ Arguments are passed via `%r0-%r3`. Results are returned in `%r0`. On failure (b
 | **2** | `get_time`| None | MS since program start (wall clock) |
 | **3** | `sbrk` | `%r3`: Increment size | Old heap end address |
 
-Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors — anything else returns -1 (it does NOT silently perform a different syscall anymore lol). Reading and writing from other files is planned. Reading from stdin returns each character as its ascii representation and stops at a newline. A failed `sbrk` returns -1 and also halts the VM with a Segmentation Fault status.
-
+Currently, FD = 0 (stdin) and FD = 1 (stdout) are the only supported file descriptors — anything else returns -1 (it does NOT silently perform a different syscall anymore lol). Reading and writing from other files is planned. Reading from stdin returns each character as its ascii representation and stops at a newline. A failed `sbrk` returns -1 in `%r0`.
 ---
 
 ## Labels
