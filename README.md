@@ -84,8 +84,8 @@ The assembler fails with a line number if you:
 | `mov %r, %s` | `20rs----` | Copy `%r` -> `%s` |
 | `inc %r` | `21r-----` | `%r = %r + 1` |
 | `dec %r` | `22r-----` | `%r = %r - 1` |
-| `shf %r<<#v, %s` | `23rs--vv` | Shift `%r` left by `v` -> `%s` | TODO turn into register
-| `shf %r>>#v, %s` | `23rs--vv` | Shift `%r` right by `v` -> `%s` (**arithmetic**: sign bit preserved, so -8 >> 1 = -4) |
+| `shl %r, %s, %o` | `23rso--0` | `%o = %r << %s`|
+| `shr %r, %s, %o` | `23rso--1` | `%o = %r >> %s`|
 | `add %r, %s, %o` | `24rso---` | `%o = %r + %s` |
 | `sub %r, %s, %o` | `25rso---` | `%o = %r - %s` |
 | `mul %r, %s, %o` | `26rso---` | `%o = %r * %s` |

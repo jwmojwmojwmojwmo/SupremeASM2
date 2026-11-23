@@ -25,10 +25,10 @@ Status cpu_run(CPU *cpu, uint32_t init_pc)
             break;
 
         /* decode */
-        uint8_t op  = (ins >> 24) & 0xFF;
-        uint8_t r   = (ins >> 20) & 0xF;
-        uint8_t s   = (ins >> 16) & 0xF;
-        uint8_t o   = (ins >> 12) & 0xF;
+        uint8_t op = (ins >> 24) & 0xFF;
+        uint8_t r = (ins >> 20) & 0xF;
+        uint8_t s = (ins >> 16) & 0xF;
+        uint8_t o = (ins >> 12) & 0xF;
         int16_t off = (int16_t)(ins & 0xFFFF);
 
         /* execute with one switch statement */
@@ -82,13 +82,21 @@ Status cpu_run(CPU *cpu, uint32_t init_pc)
         case 0x22: /* dec %r */
             cpu->regs[r]--;
             break;
-        case 0x23: /* shf %r<<#v / %r>>#v, %s */
+        case 0x23: /* shl/shr %r, %s, %o */
         {
-            int8_t val = (int8_t)(ins & 0xFF);
-            if (val < 0)
-                cpu->regs[s] = (uint32_t)((int32_t)cpu->regs[r] >> (-val & 0x1F));
-            else
-                cpu->regs[s] = cpu->regs[r] << (val & 0x1F);
+            uint8_t sub_op = ins & 0xF;
+
+            // mod 32
+            uint32_t shift_amount = cpu->regs[s] & 0x1F;
+
+            if (sub_op == 0)
+            {
+                cpu->regs[o] = cpu->regs[r] << shift_amount;
+            }
+            else if (sub_op == 1)
+            {
+                cpu->regs[o] = (uint32_t)((int32_t)cpu->regs[r] >> shift_amount);
+            }
             break;
         }
         case 0x24: /* add */
@@ -101,11 +109,19 @@ Status cpu_run(CPU *cpu, uint32_t init_pc)
             cpu->regs[o] = cpu->regs[r] * cpu->regs[s];
             break;
         case 0x27: /* div (signed) */
-            if (cpu->regs[s] == 0) { cpu->status = STATUS_ERR_DIV_ZERO; break; }
+            if (cpu->regs[s] == 0)
+            {
+                cpu->status = STATUS_ERR_DIV_ZERO;
+                break;
+            }
             cpu->regs[o] = (uint32_t)((int32_t)cpu->regs[r] / (int32_t)cpu->regs[s]);
             break;
         case 0x28: /* mod (signed) */
-            if (cpu->regs[s] == 0) { cpu->status = STATUS_ERR_DIV_ZERO; break; }
+            if (cpu->regs[s] == 0)
+            {
+                cpu->status = STATUS_ERR_DIV_ZERO;
+                break;
+            }
             cpu->regs[o] = (uint32_t)((int32_t)cpu->regs[r] % (int32_t)cpu->regs[s]);
             break;
         case 0x29: /* and */
@@ -124,16 +140,20 @@ Status cpu_run(CPU *cpu, uint32_t init_pc)
             cpu->pc += off;
             break;
         case 0x31: /* bre */
-            if (cpu->regs[r] == cpu->regs[s]) cpu->pc += off;
+            if (cpu->regs[r] == cpu->regs[s])
+                cpu->pc += off;
             break;
         case 0x32: /* brn */
-            if (cpu->regs[r] != cpu->regs[s]) cpu->pc += off;
+            if (cpu->regs[r] != cpu->regs[s])
+                cpu->pc += off;
             break;
         case 0x33: /* bgs (signed) */
-            if ((int32_t)cpu->regs[r] > (int32_t)cpu->regs[s]) cpu->pc += off;
+            if ((int32_t)cpu->regs[r] > (int32_t)cpu->regs[s])
+                cpu->pc += off;
             break;
         case 0x34: /* bgu (unsigned) */
-            if (cpu->regs[r] > cpu->regs[s]) cpu->pc += off;
+            if (cpu->regs[r] > cpu->regs[s])
+                cpu->pc += off;
             break;
         case 0x35: /* gpc %r, #o */
             cpu->regs[r] = cpu->pc + off;

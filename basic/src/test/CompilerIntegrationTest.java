@@ -108,4 +108,29 @@ public class CompilerIntegrationTest extends CompilerTestBase {
             fail("Failed to read generated .sasm file: " + e.getMessage());
         }
     }
+
+    @Test
+    void testSupremeCompilerBitwise(@TempDir Path tempDir) {
+        SupremeCompiler compiler = new SupremeCompiler(1);
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                a <- 3;
+                x <- (a << 2) | 1;
+                x <- x >> 1;
+                x <- x & 3;
+                """;
+        String filePath = tempDir.resolve("test_bitwise").toString();
+        assertTrue(compiler.compile(code, filePath), "Compilation should succeed");
+        try {
+            String content = Files.readString(Path.of(filePath + ".sasm"));
+            assertTrue(content.contains("shl"), "should contain shl");
+            assertTrue(content.contains("or"), "should contain or");
+            assertTrue(content.contains("shr"), "should contain shr");
+            assertTrue(content.contains("and"), "should contain and");
+        } catch (IOException e) {
+            fail("Failed to read generated .sasm file: " + e.getMessage());
+        }
+    }
 }

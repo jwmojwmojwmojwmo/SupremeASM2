@@ -115,9 +115,10 @@ public class Sema {
                     Type targetType = resolveTargetType(fa.structName(), fa.fieldName(), fa.line(), vars);
                     // Validate the value on the right
                     checkRHS(fa.value(), targetType, fa.line(), vars);
-                }
+                }   
 
                 default -> throw new IllegalStateException("not a statement: " + n);
+
             }
         }
 
@@ -175,12 +176,23 @@ public class Sema {
                 throw new BadParseException(
                         "struct '" + v_src.type().name() + "' has no field '" + ref.fieldName() + "'", ref.line());
             checkAssignable(srcField.type(), targetType, line);
-        } else if (value instanceof Node.ArithmeticExpression expr) {
-            Type exprType = inferExprType(expr, vars);
+        } else if (value instanceof Node.BinaryExpression || value instanceof Node.UnaryExpression) {
+            Type exprType = inferExprType(value, vars);
             checkAssignable(exprType, targetType, line);
         } else {
             throw new IllegalStateException("unexpected value node: " + value);
         }
+    }
+
+    // arithmetic/bitwise only on 1- and 4-byte primitives natively
+    private void checkOperandType(Type t, int line) {
+        if (t == null)
+            return; // untyped literal
+        if (!t.fields().isEmpty())
+            throw new BadParseException("cannot do arithmetic on struct '" + t.name() + "'", line);
+        if (t.size() != 1 && t.size() != 4)
+            throw new BadParseException("cannot do arithmetic on " + t.size() + "-byte type '"
+                    + t.name() + "'", line);
     }
 
     // returns the overal type of the expression
@@ -206,7 +218,7 @@ public class Sema {
                         + ref.fieldName() + "'", ref.line());
             return field.type();
         }
-        if (value instanceof Node.ArithmeticExpression expr) {
+        if (value instanceof Node.BinaryExpression expr) {
             Type leftType = inferExprType(expr.left(), vars);
             Type rightType = inferExprType(expr.right(), vars);
 
@@ -220,17 +232,17 @@ public class Sema {
                 checkAssignable(leftType, rightType, expr.line());
                 operandType = leftType;
             }
-
-            // arithmetic only on 1 and 4-byte primitives natively
-            if (operandType != null) {
-                if (!operandType.fields().isEmpty())
-                    throw new BadParseException("cannot do arithmetic on struct '"
-                            + operandType.name() + "'", expr.line());
-                if (operandType.size() != 1 && operandType.size() != 4)
-                    throw new BadParseException("cannot do arithmetic on " + operandType.size() + "-byte type '"
-                            + operandType.name() + "'", expr.line());
+            checkOperandType(operandType, expr.line());
+            if (expr.op().equals("<<") || expr.op().equals(">>")) {
+                if (expr.right() instanceof Node.NumberLiteral n && (n.value() < 0 || n.value() > 31))
+                    throw new BadParseException("shift count " + n.value() + " outside 0..31", expr.line());
             }
             return operandType;
+        }
+        if (value instanceof Node.UnaryExpression u) {
+            Type t = inferExprType(u.operand(), vars);
+            checkOperandType(t, u.line());
+            return t;
         }
         throw new IllegalStateException("unexpected value node: " + value);
     }

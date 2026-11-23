@@ -2,6 +2,7 @@ package basic.src.main.compiler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import basic.src.main.exceptions.BadParseException;
 
@@ -161,42 +162,75 @@ public class Parser {
         return new Node.FieldValueAssignment(varName.value(), fieldName.value(), value, varName.line());
     }
 
-    // follows BEDMAS
-    // expression = term (('+' | '-') term)*
+    // "recursively" parse an expression by calling a parse method for each level of
+    // precedence (pre order traversal)
     private Node parseExpression() {
-        Node left = parseTerm();
-        while (isOp("+") || isOp("-")) {
-            Token op = advance();
-            Node right = parseTerm();
-            left = fold(op.value(), left, right, op.line());
-        }
-        return left;
+        return parseBitOr();
     }
 
-    // term = factor (('*' | '/' | '%') factor)*
+    // follows Order of operations: () -> * / % -> + - -> << >> -> & -> ^ -> |
+    private Node parseBitOr() {
+        return parseLeftAssoc(this::parseBitXor, "|");
+    }
+
+    private Node parseBitXor() {
+        return parseLeftAssoc(this::parseBitAnd, "^");
+    }
+
+    private Node parseBitAnd() {
+        return parseLeftAssoc(this::parseShift, "&");
+    }
+
+    private Node parseShift() {
+        return parseLeftAssoc(this::parseAdditive, "<<", ">>");
+    }
+
+    private Node parseAdditive() {
+        return parseLeftAssoc(this::parseTerm, "+", "-");
+    }
+
     private Node parseTerm() {
-        Node left = parseFactor();
-        while (isOp("*") || isOp("/") || isOp("%")) {
-            Token op = advance();
-            Node right = parseFactor();
-            left = fold(op.value(), left, right, op.line());
+        return parseLeftAssoc(this::parseFactor, "*", "/", "%");
+    }
+
+    // wait this code is kinda goated
+    private Node parseLeftAssoc(Supplier<Node> sub, String... ops) {
+        Node left = sub.get();
+        while (true) {
+            String op = null;
+            for (String candidate : ops)
+                if (isOp(candidate)) {
+                    op = candidate;
+                    break;
+                }
+            if (op == null)
+                return left;
+            int line = advance().line();
+            left = fold(op, left, sub.get(), line);
         }
-        return left;
     }
 
     // factor = NUMBER | IDENTIFIER [OF IDENTIFIER] | '(' expression ')' | '-'
-    // NUMBER
+    // a binary expression contains two factors, a unary expression contains...well
+    // one duh
     private Node parseFactor() {
-        if (isOp("-")) {
-            advance();
-            Token n = expect(TokenType.Type.NUMBER);
-            long number;
-            try {
-                number = -Long.parseLong(n.value());
-            } catch (NumberFormatException e) {
-                throw new BadParseException("number out of range: -" + n.value(), n.line());
+        if (isOp("~") || isOp("-")) {
+            Token op = advance();
+            Node operand = parseFactor();
+            if (operand instanceof Node.NumberLiteral n) {
+                long result;
+                try {
+                    result = switch (op.value()) {
+                        case "~" -> ~n.value();
+                        case "-" -> Math.negateExact(n.value());
+                        default -> throw new IllegalStateException("unknown unary operator " + op);
+                    };
+                } catch (ArithmeticException e) {
+                    throw new BadParseException("constant expression out of range", op.line());
+                }
+                return new Node.NumberLiteral(result, op.line());
             }
-            return new Node.NumberLiteral(number, n.line());
+            return new Node.UnaryExpression(op.value(), operand, op.line());
         }
         if (isOp("(")) {
             advance();
@@ -245,6 +279,24 @@ public class Parser {
                             throw new BadParseException("division by zero in constant expression", line);
                         yield l.value() % r.value();
                     }
+                    case "&" -> l.value() & r.value();
+                    case "|" -> l.value() | r.value();
+                    case "^" -> l.value() ^ r.value();
+                    case "<<" -> {
+                        if (r.value() < 0 || r.value() > 31)
+                            throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
+                        long res = l.value() << r.value();
+                        // larp as Math.exact
+                        if ((res >> r.value()) != l.value())
+                            throw new BadParseException("constant expression out of range", line);
+                        yield res;
+                    }
+                    case ">>" -> {
+                        if (r.value() < 0 || r.value() > 31)
+                            throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
+                        yield l.value() >> r.value();
+                    }
+
                     default -> throw new IllegalStateException("unknown operator " + op);
                 };
             } catch (ArithmeticException e) {
@@ -252,7 +304,7 @@ public class Parser {
             }
             return new Node.NumberLiteral(result, line);
         }
-        return new Node.ArithmeticExpression(op, left, right, line);
+        return new Node.BinaryExpression(op, left, right, line);
     }
 
     private int size(Token t) {

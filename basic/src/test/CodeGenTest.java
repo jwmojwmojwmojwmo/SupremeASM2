@@ -1,5 +1,8 @@
 package basic.src.test;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.junit.jupiter.api.Test;
 
 public class CodeGenTest extends CompilerTestBase {
@@ -192,5 +195,188 @@ public class CodeGenTest extends CompilerTestBase {
         assertAsmContains(code, "ldi %14+#4, %5;");
         assertAsmContains(code, "add %4, %5, %4;");
         assertAsmContains(code, "sti %4, %14+#8;");
+    }
+
+    // ---- bitwise: register emission ----
+
+    @Test
+    void testCodeGenShlRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a << b;
+                """;
+        assertAsmContains(code, "ldi %14+#0, %4;");
+        assertAsmContains(code, "ldi %14+#4, %5;");
+        assertAsmContains(code, "shl %4, %5, %4;");
+        assertAsmContains(code, "sti %4, %14+#8;");
+    }
+
+    @Test
+    void testCodeGenShrRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a >> b;
+                """;
+        assertAsmContains(code, "shr %4, %5, %4;");
+    }
+
+    @Test
+    void testCodeGenAndRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a & b;
+                """;
+        assertAsmContains(code, "and %4, %5, %4;");
+    }
+
+    @Test
+    void testCodeGenOrRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a | b;
+                """;
+        assertAsmContains(code, "or %4, %5, %4;");
+    }
+
+    @Test
+    void testCodeGenXorRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a ^ b;
+                """;
+        assertAsmContains(code, "xor %4, %5, %4;");
+    }
+
+    @Test
+    void testCodeGenShiftLiteralCount() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a << 2;
+                """;
+        assertAsmContains(code, "ldi %14+#0, %4;");
+        assertAsmContains(code, "ld #2, %5;");
+        assertAsmContains(code, "shl %4, %5, %4;");
+        assertAsmContains(code, "sti %4, %14+#4;");
+    }
+
+    @Test
+    void testCodeGenShiftByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE a AS byte;
+                DECLARE VARIABLE b AS byte;
+                a <- b << 1;
+                """;
+        assertAsmContains(code, "ldb %14+#1, %4;");
+        assertAsmContains(code, "shl %4, %5, %4;");
+        assertAsmContains(code, "stb %4, %14+#0;");
+    }
+
+    @Test
+    void testCodeGenBitwiseByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b1 AS byte;
+                DECLARE VARIABLE b2 AS byte;
+                b1 <- b2 & 15;
+                """;
+        assertAsmContains(code, "ldb %14+#1, %4;");
+        assertAsmContains(code, "and %4, %5, %4;");
+        assertAsmContains(code, "stb %4, %14+#0;");
+    }
+
+    @Test
+    void testCodeGenNestedShiftRegisters() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a << (b >> 1);
+                """;
+        assertAsmContains(code, "ld #1, %6;");
+        assertAsmContains(code, "shr %5, %6, %5;");
+        assertAsmContains(code, "shl %4, %5, %4;");
+    }
+
+    @Test
+    void testFoldShiftRightNegative() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                x <- -8 >> 1;
+                """;
+        assertAsmContains(code, "ld #-4, %5;");
+    }
+
+    @Test
+    void testFoldBitwiseOps() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                x <- 12 & 10;
+                x <- 12 | 3;
+                x <- 12 ^ 10;
+                """;
+        assertAsmContains(code, "ld #8, %5;");
+        assertAsmContains(code, "ld #15, %5;");
+        assertAsmContains(code, "ld #6, %5;");
+        assertAsmNotContains(code, "and");
+        assertAsmNotContains(code, "or");
+        assertAsmNotContains(code, "xor");
+    }
+
+    @Test
+    void testCodeGenNot() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                x <- ~a;
+                """;
+        assertAsmContains(code, "ldi %14+#0, %4;");
+        assertAsmContains(code, "not %4, %4;");
+        assertAsmContains(code, "sti %4, %14+#4;");
+    }
+
+    @Test
+    void testCodeGenNotByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b AS byte;
+                b <- ~b;
+                """;
+        assertAsmContains(code, "ldb %14+#0, %4;");
+        assertAsmContains(code, "not %4, %4;");
+        assertAsmContains(code, "stb %4, %14+#0;");
+    }
+
+    @Test
+    void testCodeGenChainedNot() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                x <- ~~~a;
+                """;
+        // all in place in %4
+        assertAsmContains(code, "not %4, %4;");
     }
 }

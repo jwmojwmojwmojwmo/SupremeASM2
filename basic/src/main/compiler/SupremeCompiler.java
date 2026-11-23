@@ -98,10 +98,14 @@ public class SupremeCompiler {
             case Node.FieldVariableReference fvr -> {
                 System.out.println(pad + "FIELD VARIABLE " + fvr.fieldName() + " OF STRUCT " + fvr.structName());
             }
-            case Node.ArithmeticExpression ae -> {
+            case Node.BinaryExpression ae -> {
                 System.out.println(pad + "ARITHMETIC " + ae.op());
                 print(ae.left(), depth + 1);
                 print(ae.right(), depth + 1);
+            }
+            case Node.UnaryExpression ue -> {
+                System.out.println(pad + "UNARY " + ue.op());
+                print(ue.operand(), depth + 1);
             }
         }
     }

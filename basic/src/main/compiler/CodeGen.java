@@ -45,9 +45,9 @@ public class CodeGen {
     private void emitRHS(Node value, Sema.Variable v_tgt, Sema.Result sema) {
         if (value instanceof Node.NumberLiteral num) {
             emitAssignLiteral(num.value(), v_tgt);
-        } else if (value instanceof Node.ArithmeticExpression expr) {
-            int reg = evalExpr(expr, 4, sema);
-            emitStoreReg(reg, v_tgt); 
+        } else if (value instanceof Node.BinaryExpression || value instanceof Node.UnaryExpression) {
+            int reg = evalExpr(value, 4, sema);
+            emitStoreReg(reg, v_tgt);
         } else {
             // VariableReference or FieldVariableReference: copy from that location
             emitAssignVariable(locationOf(value, sema), v_tgt);
@@ -63,18 +63,35 @@ public class CodeGen {
             emit("ld #" + num.value() + ", %" + reg + ";");
             return reg;
         }
-        if (value instanceof Node.ArithmeticExpression expr) {
-            evalExpr(expr.left(), reg, sema);       // left  -> reg
-            evalExpr(expr.right(), reg + 1, sema);  // right -> reg+1
+        if (value instanceof Node.BinaryExpression expr) {
+            evalExpr(expr.left(), reg, sema); // left -> reg
+            evalExpr(expr.right(), reg + 1, sema); // right -> reg+1
             String mnemonic = switch (expr.op()) {
                 case "+" -> "add";
                 case "-" -> "sub";
                 case "*" -> "mul";
                 case "/" -> "div";
                 case "%" -> "mod";
+                case "<<" -> "shl";
+                case ">>" -> "shr";
+                case "&" -> "and";
+                case "|" -> "or";
+                case "^" -> "xor";
                 default -> throw new IllegalStateException("unknown operator " + expr.op());
             };
             emit(mnemonic + " %" + reg + ", %" + (reg + 1) + ", %" + reg + ";");
+            return reg;
+        }
+        if (value instanceof Node.UnaryExpression u) {
+            evalExpr(u.operand(), reg, sema);
+            switch (u.op()) {
+                case "~" -> emit("not %" + reg + ", %" + reg + ";");
+                case "-" -> {
+                    emit("not %" + reg + ", %" + reg + ";");
+                    emit("inc %" + reg + ";");
+                }
+                default -> throw new IllegalStateException("unknown unary operator " + u.op());
+            }
             return reg;
         }
         // Anything else is a location (variable or field)

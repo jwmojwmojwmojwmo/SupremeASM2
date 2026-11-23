@@ -22,8 +22,8 @@ sti %r, %s+%o     | 13rso000          | Store INT from r[r] -> m[r[s]+r[o]]
 mov %r, %s        | 20rs0000          | Copy r[r] -> r[s]
 inc %r            | 21r00000          | r[r]++
 dec %r            | 22r00000          | r[r]--
-shf %r<<#v, %s    | 23rs00vv          | Shift r[r] left by v -> r[s]
-shf %r>>#v, %s    | 23rs00vv          | Shift r[r] right by v -> r[s]
+shl %r, %s, %o`   | 23rso--0          | r[o] = r[r] << r[s]
+shr %r, %s, %o`   | 23rso--1`         | r[o] = r[r] >> r[s]
 add %r, %s, %o    | 24rso000          | r[o] = r[r] + r[s]
 sub %r, %s, %o    | 25rso000          | r[o] = r[r] - r[s]
 mul %r, %s, %o    | 26rso000          | r[o] = r[r] * r[s]
@@ -166,19 +166,20 @@ def translate_dec(operands):
     ins = (0x22 << 24) | (reg_r << 20) | 0xFFFFF
     return struct.pack(">I", ins)
 
-def translate_shf(operands):
-    # shf %r<<#v, %s    | 23rs00vv
-    # shf %r>>#v, %s    | 23rs00vv
-    reg_r = parse_reg(operands[0].split("<<")[0].split(">>")[0])
+def translate_shl(operands):
+    # shl %r, %s, %o    | 23rso000
+    reg_r = parse_reg(operands[0])
     reg_s = parse_reg(operands[1])
-    if ("<<" in operands[0]):
-        shift = int(operands[0].split("<<")[1].replace("#", ""), 0)
-        shift = off8(shift)
-        ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (0xFF << 8) |shift
-    else:
-        shift = int(operands[0].split(">>")[1].replace("#", ""), 0)
-        shift = off8(-shift) # convert to 2's complement for negative shift
-        ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (0xFF << 8) | shift
+    reg_o = parse_reg(operands[2])
+    ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFF0 | 0x0
+    return struct.pack(">I", ins)
+
+def translate_shr(operands):
+    # shr %r, %s, %o    | 23rso001
+    reg_r = parse_reg(operands[0])
+    reg_s = parse_reg(operands[1])
+    reg_o = parse_reg(operands[2])
+    ins = (0x23 << 24) | (reg_r << 20) | (reg_s << 16) | (reg_o << 12) | 0xFF0 | 0x1
     return struct.pack(">I", ins)
 
 def translate_add(operands):
@@ -324,7 +325,8 @@ translate_dict = {
     "mov": translate_mov,
     "inc": translate_inc,
     "dec": translate_dec,
-    "shf": translate_shf,
+    "shl": translate_shl,
+    "shr": translate_shr,
     "add": translate_add,
     "sub": translate_sub,
     "mul": translate_mul,

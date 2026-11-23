@@ -50,7 +50,11 @@ public sealed interface Node {
     record StructDeclaration(String name, List<StructField> fields, int line) implements Node {
     }
 
-    // Represents an arithmetic expression (ex: a + b * 2 => Node(a) + Node(b * 2))
-    record ArithmeticExpression(String op, Node left, Node right, int line) implements Node {
+    // Represents a binary operation (ex: a + b, a << 2, a & b)
+    record BinaryExpression(String op, Node left, Node right, int line) implements Node {
+    }
+
+    // Represents a unary operation (ex: ~x)
+    record UnaryExpression(String op, Node operand, int line) implements Node {
     }
 }

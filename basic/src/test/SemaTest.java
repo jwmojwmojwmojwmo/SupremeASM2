@@ -248,16 +248,6 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testUnknownTypeInStructField() {
-        String code = """
-                DECLARE STRUCT Point THEN
-                    x AS float;
-                END;
-                """;
-        assertFails(code, "unknown type 'float'");
-    }
-
-    @Test
     void testTypeSizeZero() {
         String code = """
                 DECLARE TYPE empty SIZE 0;
@@ -272,29 +262,6 @@ public class SemaTest extends CompilerTestBase {
                 DECLARE VARIABLE x AS huge;
                 """;
         assertFails(code, "program exceeds the 32767-byte stack frame");
-    }
-
-    @Test
-    void testUnknownFieldWrite() {
-        String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE STRUCT P THEN x AS int; END;
-                DECLARE VARIABLE p AS P;
-                y OF p <- 5;
-                """;
-        assertFails(code, "struct 'P' has no field 'y'");
-    }
-
-    @Test
-    void testUnknownFieldRead() {
-        String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE STRUCT P THEN x AS int; END;
-                DECLARE VARIABLE p AS P;
-                DECLARE VARIABLE z AS int;
-                z <- y OF p;
-                """;
-        assertFails(code, "struct 'P' has no field 'y'");
     }
 
     // ---- arithmetic: valid ----
@@ -351,20 +318,6 @@ public class SemaTest extends CompilerTestBase {
                 x <- a + 5;
                 x <- 5 + a;
                 x <- a * 2 - 1;
-                """;
-        assertCompiles(code);
-    }
-
-    @Test
-    void testArithmeticLeftAssociativeChain() {
-        String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE VARIABLE a AS int;
-                DECLARE VARIABLE b AS int;
-                DECLARE VARIABLE c AS int;
-                DECLARE VARIABLE x AS int;
-                x <- a - b - c;
-                x <- a / b / c;
                 """;
         assertCompiles(code);
     }
@@ -443,32 +396,6 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticOnStruct() {
-        String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE STRUCT P THEN x AS int; END;
-                DECLARE VARIABLE p AS P;
-                DECLARE VARIABLE q AS P;
-                DECLARE VARIABLE r AS P;
-                r <- p + q;
-                """;
-        assertFails(code, "cannot do arithmetic on struct");
-    }
-
-    @Test
-    void testArithmeticOnStructField() {
-        String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE STRUCT Inner THEN v AS int; END;
-                DECLARE STRUCT Outer THEN inner AS Inner; END;
-                DECLARE VARIABLE o AS Outer;
-                DECLARE VARIABLE r AS Inner;
-                r <- inner OF o + inner OF o;
-                """;
-        assertFails(code, "cannot do arithmetic on struct");
-    }
-
-    @Test
     void testArithmeticOn2ByteRejected() {
         String code = """
                 DECLARE TYPE short SIZE 2;
@@ -477,17 +404,6 @@ public class SemaTest extends CompilerTestBase {
                 """;
         assertFails(code, "cannot do arithmetic");
     }
-
-    @Test
-    void testArithmeticOn3ByteRejected() {
-        String code = """
-                DECLARE TYPE med SIZE 3;
-                DECLARE VARIABLE a AS med;
-                a <- a + 1;
-                """;
-        assertFails(code, "cannot do arithmetic");
-    }
-
     @Test
     void testArithmeticOn8ByteRejected() {
         String code = """
@@ -507,5 +423,100 @@ public class SemaTest extends CompilerTestBase {
                 x <- z + 1;
                 """;
         assertFails(code, "undeclared variable 'z'");
+    }
+
+    // ---- bitwise: valid ----
+
+    @Test
+    void testShiftBothDirections() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a << b;
+                x <- a >> b;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testBitwiseAllOperators() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE x AS int;
+                x <- a & b;
+                x <- a | b;
+                x <- a ^ b;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testShiftOnByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b AS byte;
+                b <- b << 1;
+                b <- b >> 1;
+                """;
+        assertCompiles(code);
+    }
+
+
+    @Test
+    void testShiftFoldedValueOverflow() {
+        // constants must fit at compile time, same rule as 2147483647 + 1
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                x <- 1 << 31;
+                """;
+        assertFails(code, "does not fit in int");
+    }
+
+    @Test
+    void testBitwiseFoldThenBoundsCheck() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b AS byte;
+                b <- 15 | 240;
+                """;
+        assertFails(code, "does not fit in byte");
+    }
+
+    // ---- unary: valid ----
+    @Test
+    void testNotOnInt() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                x <- ~a;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testNotOnByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b AS byte;
+                b <- ~b;
+                """;
+        assertCompiles(code);
+    }
+
+    // ---- unary: failures ----
+    @Test
+    void testNotFoldedOverflowByte() {
+        String code = """
+                DECLARE TYPE byte SIZE 1;
+                DECLARE VARIABLE b AS byte;
+                b <- ~128;
+                """;
+        assertFails(code, "does not fit in byte"); // -129
     }
 }

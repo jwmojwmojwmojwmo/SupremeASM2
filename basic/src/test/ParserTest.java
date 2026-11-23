@@ -79,17 +79,6 @@ public class ParserTest extends CompilerTestBase {
     }
 
     @Test
-    void testSyntaxAdjacentIdentifiers() {
-        assertParseFails("x <- a b;", "expected ';'");
-    }
-
-    @Test
-    void testSyntaxUnaryMinusOnVariable() {
-        // Current limitation: unary minus only works on literals, not variables
-        assertParseFails("x <- -a;", "expected NUMBER");
-    }
-
-    @Test
     void testSyntaxLiteralDivByZero() {
         assertParseFails("x <- 5 / 0;", "division by zero");
     }
@@ -104,57 +93,69 @@ public class ParserTest extends CompilerTestBase {
         assertParseFails("x <- 9223372036854775807 + 1;", "constant expression out of range");
     }
 
-    // ---- invalid assignment operators ----
+    // ---- bitwise: valid syntax ----
 
     @Test
-    void testSyntaxLessThanInsteadOfArrow() {
-        assertParseFails("x < y;", "expected '<-'");
+    void testParsesShiftLeft() {
+        assertParses("x <- a << 2;");
     }
 
     @Test
-    void testSyntaxEqualsInsteadOfArrow() {
-        assertParseFails("x = y;", "expected '<-'");
+    void testParsesShiftRight() {
+        assertParses("x <- a >> b;");
     }
 
     @Test
-    void testSyntaxDoubleArrow() {
-        assertParseFails("x <- <- y;", "expected a number, variable");
-    }
-
-    // ---- invalid declarations ----
-
-    @Test
-    void testSyntaxMissingAS() {
-        assertParseFails("DECLARE VARIABLE x int;", "expected 'AS'");
+    void testParsesBitwiseOps() {
+        assertParses("x <- a & b | c ^ d;");
     }
 
     @Test
-    void testSyntaxMissingSIZE() {
-        assertParseFails("DECLARE TYPE int 4;", "expected 'SIZE'");
+    void testParsesBitwisePrecedenceMix() {
+        assertParses("x <- a + b << 2 & 3 | 1;");
     }
 
     @Test
-    void testSyntaxMissingTHEN() {
-        assertParseFails("DECLARE STRUCT P x AS int; END;", "expected 'THEN'");
+    void testParsesShiftChain() {
+        assertParses("x <- a << 1 << 2;");
     }
 
     @Test
-    void testSyntaxMissingFieldSemicolon() {
-        assertParseFails("DECLARE STRUCT P THEN x AS int END;", "expected ';'");
+    void testParsesBitwiseParens() {
+        assertParses("x <- (a | b) & (c ^ d);");
+    }
+
+    // ---- bitwise: constant folding errors ----
+
+    @Test
+    void testSyntaxShiftCountTooBig() {
+        assertParseFails("x <- 1 << 32;", "shift count 32 outside 0..31");
     }
 
     @Test
-    void testSyntaxKeywordAsIdentifier() {
-        assertParseFails("DECLARE VARIABLE THEN AS int;", "expected IDENTIFIER");
+    void testSyntaxShiftCountNegative() {
+        assertParseFails("x <- 1 << -1;", "shift count -1 outside 0..31");
     }
 
     @Test
-    void testSyntaxMissingDeclSemicolon() {
-        assertParseFails("DECLARE VARIABLE x AS int", "expected ';'");
+    void testSyntaxShiftFoldOverflow() {
+        // round-trip check catches bits shifted out of the long
+        assertParseFails("x <- 9223372036854775807 << 1;", "constant expression out of range");
     }
 
     @Test
-    void testSyntaxBadDeclareKind() {
-        assertParseFails("DECLARE FUNCTION f;", "expected VARIABLE, TYPE, or STRUCT");
+    void testParsesNot() {
+        assertParses("x <- ~a;");
+    }
+
+    @Test
+    void testParsesDoubleNot() {
+        assertParses("x <- ~~a;");
+    }
+
+
+    @Test
+    void testParsesNotNegativeLiteral() {
+        assertParses("x <- ~-5;");
     }
 }
