@@ -42,49 +42,37 @@ public class Sema {
         Map<String, Type> types = new HashMap<>();
         int offset = 0;
 
-        // PASS 1: Collect all primitive TYPE definitions
-        for (Node n : program.statements()) {
-            if (n instanceof Node.TypeDeclaration t) {
-                if (t.size() < 1)
-                    throw new BadParseException("type size must be at least 1", t.line());
-                if (types.containsKey(t.name()))
-                    throw new BadParseException("type '" + t.name() + "' already defined", t.line());
-                types.put(t.name(), new Type(t.name(), t.size()));
-            }
-        }
-
-        // PASS 2: Collect all STRUCT definitions
-        for (Node n : program.statements()) {
-            if (n instanceof Node.StructDeclaration s) {
-                if (types.containsKey(s.name()))
-                    throw new BadParseException("type '" + s.name() + "' already defined", s.line());
-
-                int currentOffset = 0;
-                List<FieldLayout> layouts = new ArrayList<>();
-                Set<String> fieldNames = new HashSet<>();
-                for (Node.StructField f : s.fields()) {
-                    if (!fieldNames.add(f.name()))
-                        throw new BadParseException("duplicate field '" + f.name()
-                                + "' in struct '" + s.name() + "'", f.line());
-
-                    Type fieldType = types.get(f.typeName());
-                    if (fieldType == null)
-                        throw new BadParseException("unknown type '" + f.typeName() + "' in struct '" + s.name() + "'",
-                                f.line());
-
-                    layouts.add(new FieldLayout(f.name(), fieldType, currentOffset));
-                    currentOffset += fieldType.size();
-                }
-                types.put(s.name(), new Type(s.name(), currentOffset, layouts));
-            }
-        }
-
-        // PASS 3: process variables and assignments
         for (Node n : program.statements()) {
             switch (n) {
                 case Node.TypeDeclaration t -> {
+                    if (t.size() < 1)
+                        throw new BadParseException("type size must be at least 1", t.line());
+                    if (types.containsKey(t.name()))
+                        throw new BadParseException("type '" + t.name() + "' already defined", t.line());
+                    types.put(t.name(), new Type(t.name(), t.size()));
                 }
+
                 case Node.StructDeclaration s -> {
+                    if (types.containsKey(s.name()))
+                        throw new BadParseException("type '" + s.name() + "' already defined", s.line());
+
+                    int currentOffset = 0;
+                    List<FieldLayout> layouts = new ArrayList<>();
+                    Set<String> fieldNames = new HashSet<>();
+                    for (Node.StructField f : s.fields()) {
+                        if (!fieldNames.add(f.name()))
+                            throw new BadParseException("duplicate field '" + f.name()
+                                    + "' in struct '" + s.name() + "'", f.line());
+
+                        Type fieldType = types.get(f.typeName());
+                        if (fieldType == null)
+                            throw new BadParseException(
+                                    "unknown type '" + f.typeName() + "' in struct '" + s.name() + "'", f.line());
+
+                        layouts.add(new FieldLayout(f.name(), fieldType, currentOffset));
+                        currentOffset += fieldType.size();
+                    }
+                    types.put(s.name(), new Type(s.name(), currentOffset, layouts));
                 }
 
                 case Node.VariableDeclaration d -> {
@@ -151,12 +139,7 @@ public class Sema {
             if (!targetType.fields().isEmpty())
                 throw new BadParseException("cannot assign a literal to the struct '"
                         + targetType.name() + "'", line);
-            long bits = Math.min(targetType.size(), 4) * 8L;
-            long half = 1L << (bits - 1);
-            if (num.value() < -half || num.value() >= half)
-                throw new BadParseException("value " + num.value() + " does not fit in "
-                        + targetType.name() + " (" + targetType.size() + " byte(s), range " + (-half) + ".."
-                        + (half - 1) + ")", line);
+            checkLiteralFits(num.value(), targetType, line);
 
         } else if (value instanceof Node.VariableReference ref) {
             Variable v_src = vars.get(ref.name());
@@ -182,6 +165,16 @@ public class Sema {
         } else {
             throw new IllegalStateException("unexpected value node: " + value);
         }
+    }
+
+    // Literals are untyped, so they must fit in whatever type they end up adopting
+    private void checkLiteralFits(long value, Type type, int line) {
+        long bits = Math.min(type.size(), 4) * 8L;
+        long half = 1L << (bits - 1);
+        if (value < -half || value >= half)
+            throw new BadParseException("value " + value + " does not fit in "
+                    + type.name() + " (" + type.size() + " byte(s), range " + (-half) + ".."
+                    + (half - 1) + ")", line);
     }
 
     // arithmetic/bitwise only on 1- and 4-byte primitives natively
@@ -233,6 +226,13 @@ public class Sema {
                 operandType = leftType;
             }
             checkOperandType(operandType, expr.line());
+            // a literal operand adopts operandType, so it has to fit in it
+            // (the right side of a shift is a bit count, not a value, so it has its own 0..31 check below)
+            boolean isShift = expr.op().equals("<<") || expr.op().equals(">>");
+            if (expr.left() instanceof Node.NumberLiteral n)
+                checkLiteralFits(n.value(), operandType, expr.line());
+            if (!isShift && expr.right() instanceof Node.NumberLiteral n)
+                checkLiteralFits(n.value(), operandType, expr.line());
             if (expr.op().equals("<<") || expr.op().equals(">>")) {
                 if (expr.right() instanceof Node.NumberLiteral n && (n.value() < 0 || n.value() > 31))
                     throw new BadParseException("shift count " + n.value() + " outside 0..31", expr.line());

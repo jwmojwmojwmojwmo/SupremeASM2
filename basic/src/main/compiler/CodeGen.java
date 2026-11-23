@@ -44,13 +44,13 @@ public class CodeGen {
     // Helper method to handle whatever is on the right side of the '<-'
     private void emitRHS(Node value, Sema.Variable v_tgt, Sema.Result sema) {
         if (value instanceof Node.NumberLiteral num) {
-            emitAssignLiteral(num.value(), v_tgt);
+            emitStoreLiteral(num.value(), v_tgt);
         } else if (value instanceof Node.BinaryExpression || value instanceof Node.UnaryExpression) {
             int reg = evalExpr(value, 4, sema);
             emitStoreReg(reg, v_tgt);
         } else {
             // VariableReference or FieldVariableReference: copy from that location
-            emitAssignVariable(locationOf(value, sema), v_tgt);
+            emitStoreVariable(locationOf(value, sema), v_tgt);
         }
     }
 
@@ -96,7 +96,7 @@ public class CodeGen {
         }
         // Anything else is a location (variable or field)
         Sema.Variable v = locationOf(value, sema);
-        emitLoadAt(v.type().size(), v.offset(), reg);
+        emitLoadToReg(v.type().size(), v.offset(), reg);
         return reg;
     }
 
@@ -118,7 +118,7 @@ public class CodeGen {
     }
 
     // Load a stack value into a register (1 or 4-byte types only).
-    private void emitLoadAt(int size, int offset, int reg) {
+    private void emitLoadToReg(int size, int offset, int reg) {
         if (size == 1)
             emit("ldb %14+#" + offset + ", %" + reg + ";");
         else if (size == 4)
@@ -140,7 +140,7 @@ public class CodeGen {
     }
 
     // store `value` into v, filling ALL v.size() bytes, big-endian
-    private void emitAssignLiteral(long value, Sema.Variable v) {
+    private void emitStoreLiteral(long value, Sema.Variable v) {
         int size = v.type().size();
         int off = v.offset();
 
@@ -187,10 +187,10 @@ public class CodeGen {
         }
     }
 
-    private void emitAssignVariable(Sema.Variable v_src, Sema.Variable v_tgt) {
+    private void emitStoreVariable(Sema.Variable v_src, Sema.Variable v_tgt) {
         int size = v_src.type().size();
         if (size == 1 || size == 4) {
-            emitLoadAt(size, v_src.offset(), 5);
+            emitLoadToReg(size, v_src.offset(), 5);
             emitStoreReg(5, v_tgt);
             return;
         }
