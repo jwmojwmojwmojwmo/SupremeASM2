@@ -43,7 +43,7 @@ Compiled .smc files are written to the **executable** folder at the repo root (c
 
 **IMPORTANT**: All Supreme Machine Code files have file extension .smc, and all SupremeASM v2 files have file extension .sasm. To differentiate from SupremeASM v1, SupremeASM v2 files must have header "@version 2". See examples for uh...examples.
 
-**ALSO IMPORTANT**: The makefile is MSVC/Windows (nmake). The current compiled C code found in vm/main.exe probably won't work if you're on a different OS or hardware or something or other tbh I don't really get makefiles. On Linux/macOS you'll probably have to recompile main.c with like gcc -std=c11 or whatever. Anyways it works on my machine but YMMV.
+**ALSO IMPORTANT**: The makefile is MSVC/Windows (nmake). The current compiled C code found in vm/main.exe probably won't work if you're on a different OS or hardware or something or other tbh I don't really get makefiles. On Linux/macOS you'll probably have to recompile the C code, for which you can use `gcc -std=c11` (and then other flags at your discretion). Anyways it works on my machine but YMMV.
 
 ## Register Conventions
 While all registers are technically general-purpose, the general conventions are as follows:

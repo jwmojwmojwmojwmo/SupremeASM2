@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
         }
     }
     CPU cpu;
-    init_os(&cpu, EIGHT_MB);
+    init_os(&cpu, EIGHT_MB * 2);
     Status status;
     uint32_t pc = load_program(argv[1], &status);
     if (status != STATUS_OK)
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
         printf("\n--- Memory Dump ---\n");
         for (int i = 0; i < EIGHT_MB; i += 1)
         {
-            uint8_t val = read_byte(i, &status);
+            uint8_t val = memory[i];
             if (val != 0)
             {
                 printf("0x%08X(%d): 0x%02X(%d)\n", i, i, val, val);

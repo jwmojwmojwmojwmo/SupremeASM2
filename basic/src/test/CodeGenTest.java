@@ -408,6 +408,7 @@ public class CodeGenTest extends CompilerTestBase {
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 1;
                 x <- ((((((a - a) - (a - a)) - ((a - a) - (a - a)))
                          - (((a - a) - (a - a)) - ((a - a) - (a - a))))
                         - ((((a - a) - (a - a)) - ((a - a) - (a - a)))
@@ -417,6 +418,6 @@ public class CodeGenTest extends CompilerTestBase {
                           - ((((a - a) - (a - a)) - ((a - a) - (a - a)))
                              - (((a - a) - (a - a)) - ((a - a) - (a - a))))));
                 """;
-        assertAsmContains(code, "ldi %14+#0, %4;");
+        assertAsmContains(code, "sti %4, %14+#4");
     }
 }

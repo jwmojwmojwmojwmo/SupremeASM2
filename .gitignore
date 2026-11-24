@@ -2,3 +2,6 @@
 test.sbas
 test.sasm
 test.smc
+*.pdb
+*.obj
+executable/

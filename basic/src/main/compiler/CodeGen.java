@@ -18,21 +18,21 @@ public class CodeGen {
 
         for (Node n : program.statements()) {
             switch (n) {
-                case Node.ValueAssignment a -> {
-                    Sema.Variable v_tgt = sema.vars().get(a.name());
-                    emitRHS(a.value(), v_tgt, sema);
-                }
-                case Node.FieldValueAssignment fa -> {
-                    Sema.Variable tgt = fieldVar(fa.structName(), fa.fieldName(), fa.line(), sema);
-                    emitRHS(fa.value(), tgt, sema);
-                }
-                case Node.VariableDeclaration d -> {
-                }
-                case Node.TypeDeclaration t -> {
-                }
-                case Node.StructDeclaration s -> {
-                }
-                default -> System.out.println("Warning: Unhandled statement: " + n);
+            case Node.ValueAssignment a -> {
+                Sema.Variable v_tgt = sema.vars().get(a.name());
+                emitRHS(a.value(), v_tgt, sema);
+            }
+            case Node.FieldValueAssignment fa -> {
+                Sema.Variable tgt = fieldVar(fa.structName(), fa.fieldName(), fa.line(), sema);
+                emitRHS(fa.value(), tgt, sema);
+            }
+            case Node.VariableDeclaration d -> {
+            }
+            case Node.TypeDeclaration t -> {
+            }
+            case Node.StructDeclaration s -> {
+            }
+            default -> System.out.println("Warning: Unhandled statement: " + n);
             }
         }
 
@@ -46,7 +46,7 @@ public class CodeGen {
         if (value instanceof Node.NumberLiteral num) {
             emitStoreLiteral(num.value(), v_tgt);
         } else if (value instanceof Node.BinaryExpression || value instanceof Node.UnaryExpression) {
-            int reg = evalExpr(value, 4, sema);
+            int reg = evalExpr(value, 4, sema, false);
             emitStoreReg(reg, v_tgt);
         } else {
             // VariableReference or FieldVariableReference: copy from that location
@@ -67,48 +67,72 @@ public class CodeGen {
     }
 
     // Evaluate expression into scratch register `reg`; result lands in `reg`.
-    private int evalExpr(Node value, int reg, Sema.Result sema) {
-        if (reg > 9)
-            throw new IllegalStateException("expression too complex (out of scratch registers)");
-
+    private int evalExpr(Node value, int reg, Sema.Result sema, boolean hasSpilled) {
         if (value instanceof Node.NumberLiteral num) {
             emit("ld #" + num.value() + ", %" + reg + ";");
             return reg;
         }
         if (value instanceof Node.BinaryExpression expr) {
-            // Sethi-Ullman: evaluate the child that needs more registers first
-            int regLeft = need(expr.left());
-            int regRight = need(expr.right());
-            boolean rightFirst = regRight > regLeft;
-            evalExpr(rightFirst ? expr.right() : expr.left(), reg, sema);
-            evalExpr(rightFirst ? expr.left() : expr.right(), reg + 1, sema);
-            int leftReg = rightFirst ? reg + 1 : reg;
-            int rightReg = rightFirst ? reg : reg + 1;
+            int needLeft = need(expr.left());
+            int needRight = need(expr.right());
+            boolean rightFirst = needRight > needLeft;
+            Node heavy = rightFirst ? expr.right() : expr.left();
+            Node light = rightFirst ? expr.left() : expr.right();
+
+            int available = 8 - reg + 1;
+            int heavyReg;
+            int lightReg;
+            // use .min since we can just keep the heavy one in a register right right right???
+            if (Math.min(needLeft, needRight) <= available - 1) {
+                // Sethi-Ullman: heavier child first, both results stay in registers
+                evalExpr(heavy, reg, sema, hasSpilled);
+                evalExpr(light, reg + 1, sema, hasSpilled);
+                heavyReg = reg;
+                lightReg = reg + 1;
+            } else {
+                // so yeah i have no idea what's going on anymore
+                if (!hasSpilled) {
+                    emit("mov %14, %9;");
+                    hasSpilled = true;
+                }
+                evalExpr(heavy, reg, sema, hasSpilled);
+                emit("dec %9;\ndec %9;\ndec %9;\ndec %9;");
+                emit("sti %" + reg + ", %9+#0;");
+                evalExpr(light, reg, sema, hasSpilled);
+                emit("ldi %9+#0, %" + (reg + 1) + ";");
+                emit("inc %9;\ninc %9;\ninc %9;\ninc %9;");
+                heavyReg = reg + 1;
+                lightReg = reg;
+            }
+
+            int leftReg = rightFirst ? lightReg : heavyReg;
+            int rightReg = rightFirst ? heavyReg : lightReg;
+
             String mnemonic = switch (expr.op()) {
-                case "+" -> "add";
-                case "-" -> "sub";
-                case "*" -> "mul";
-                case "/" -> "div";
-                case "%" -> "mod";
-                case "<<" -> "shl";
-                case ">>" -> "shr";
-                case "&" -> "and";
-                case "|" -> "or";
-                case "^" -> "xor";
-                default -> throw new IllegalStateException("unknown operator " + expr.op());
+            case "+" -> "add";
+            case "-" -> "sub";
+            case "*" -> "mul";
+            case "/" -> "div";
+            case "%" -> "mod";
+            case "<<" -> "shl";
+            case ">>" -> "shr";
+            case "&" -> "and";
+            case "|" -> "or";
+            case "^" -> "xor";
+            default -> throw new IllegalStateException("unknown operator " + expr.op());
             };
             emit(mnemonic + " %" + leftReg + ", %" + rightReg + ", %" + reg + ";");
             return reg;
         }
         if (value instanceof Node.UnaryExpression u) {
-            evalExpr(u.operand(), reg, sema);
+            evalExpr(u.operand(), reg, sema, hasSpilled);
             switch (u.op()) {
-                case "~" -> emit("not %" + reg + ", %" + reg + ";");
-                case "-" -> {
-                    emit("not %" + reg + ", %" + reg + ";");
-                    emit("inc %" + reg + ";");
-                }
-                default -> throw new IllegalStateException("unknown unary operator " + u.op());
+            case "~" -> emit("not %" + reg + ", %" + reg + ";");
+            case "-" -> {
+                emit("not %" + reg + ", %" + reg + ";");
+                emit("inc %" + reg + ";");
+            }
+            default -> throw new IllegalStateException("unknown unary operator " + u.op());
             }
             return reg;
         }
@@ -122,8 +146,7 @@ public class CodeGen {
     private Sema.Variable fieldVar(String structName, String fieldName, int line, Sema.Result sema) {
         Sema.Variable v = sema.vars().get(structName);
         Sema.FieldLayout field = v.type().getField(fieldName);
-        return new Sema.Variable(v.name() + "." + field.name(), field.type(),
-                v.offset() + field.offset(), line);
+        return new Sema.Variable(v.name() + "." + field.name(), field.type(), v.offset() + field.offset(), line);
     }
 
     // Resolve a value node that names a memory location (variable or field).

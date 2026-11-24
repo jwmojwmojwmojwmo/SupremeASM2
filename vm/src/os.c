@@ -3,7 +3,6 @@
 #include <time.h>
 
 #define ONE_MB 1048576
-#define PAGE_SIZE 4096
 
 /*
     Layout:
@@ -66,33 +65,26 @@ uint32_t load_program(char *filename, Status *status)
         return -1;
     }
 
+    heap_break = (PROGRAM_BASE + (uint32_t)size);
+    set_mem_regions(PROGRAM_BASE, PROGRAM_BASE + (uint32_t)size,
+                USER_LIMIT, main_mem_size - STACK_SIZE);
+
     uint32_t address = PROGRAM_BASE;
     int byte;
     while ((byte = fgetc(file)) != EOF)
-    {
-        write_byte(address, (uint8_t)byte, status);
-        if (*status != STATUS_OK)
-        {
-            fclose(file);
-            print_formatted(*status);
-            return -1;
-        }
-        address++;
-    }
+        memory[address++] = (uint8_t)byte;
     fclose(file);
 
-    /* heap begins right after the program, rounded up to a page */
-    heap_break = (PROGRAM_BASE + (uint32_t)size + PAGE_SIZE - 1) & ~(uint32_t)(PAGE_SIZE - 1);
-
-    printf("Program loaded successfully starting at 0x%08X (%d)\n", (uint32_t)PROGRAM_BASE, (uint32_t)PROGRAM_BASE);
+    printf("Program loaded successfully starting at 0x%08X (%d)\n",
+           (uint32_t)PROGRAM_BASE, (uint32_t)PROGRAM_BASE);
     *status = STATUS_OK;
     return PROGRAM_BASE;
 }
 
 Status run_program(CPU *cpu, uint32_t pc)
 {
-    cpu->regs[14] = stack_top;      /* SP starts at top of stack, grows down */
-    cpu->regs[0] = heap_break;      /* r0 = start of heap so programs know where it is */
+    cpu->regs[14] = stack_top;
+    cpu->regs[0] = heap_break;
     start_time_ms = now_ms();
     printf("\n----Running program from 0x%08X (%d)----\n", pc, pc);
     Status status = cpu_run(cpu, pc);
@@ -184,7 +176,13 @@ void print_formatted(Status status)
         printf("Exited with status: OK, Halted\n");
         break;
     case STATUS_ERR_SEGFAULT:
-        printf("Exited with status: Segmentation Fault\n");
+        if (fault_kind == 2)
+            printf("Exited with status: Segmentation Fault (execute at 0x%08X)\n", fault_addr);
+        else if (fault_kind == 3)
+            printf("Exited with status: Segmentation Fault (address overflow from 0x%08X)\n", fault_addr);
+        else
+            printf("Exited with status: Segmentation Fault (%s of %u byte(s) at 0x%08X)\n",
+                   fault_kind ? "write" : "read", fault_len, fault_addr);
         break;
     case STATUS_ERR_UNKNOWN_OP:
         printf("Exited with status: Unknown Operation\n");
