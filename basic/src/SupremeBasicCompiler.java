@@ -11,7 +11,6 @@ import basic.src.main.compiler.SupremeCompiler;
 
 public class SupremeBasicCompiler {
     public static void main(String[] args) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
         Scanner scanner = new Scanner(System.in);
         System.out.println("Enter file path to SupremeBASIC program:");
         String path = scanner.nextLine().trim();
@@ -29,6 +28,13 @@ public class SupremeBasicCompiler {
         }
 
         String baseName = Path.of(path).getFileName().toString();
+        System.out.println("File found. Press enter to compile normally. Type 'v' to compile with verbose output.");
+        String input = scanner.nextLine().trim();
+        boolean verbose = false;
+        if (input.equals("v")) {
+            verbose = true;
+        }
+        SupremeCompiler compiler = new SupremeCompiler(1, verbose);
         baseName = baseName.substring(0, baseName.lastIndexOf('.'));
         boolean success = compiler.compile(content, baseName);
         if (!success) {

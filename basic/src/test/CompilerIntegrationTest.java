@@ -12,7 +12,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerSuccess(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -36,7 +36,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerParseError(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = "DECLARE VARIABLE x AS;";
         String filePath = tempDir.resolve("test_parse_error").toString();
 
@@ -48,7 +48,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerSemaError(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -64,7 +64,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerStructs(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN
@@ -87,7 +87,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerArithmetic(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -111,7 +111,7 @@ public class CompilerIntegrationTest extends CompilerTestBase {
 
     @Test
     void testSupremeCompilerBitwise(@TempDir Path tempDir) {
-        SupremeCompiler compiler = new SupremeCompiler(1);
+        SupremeCompiler compiler = new SupremeCompiler(1, false);
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
