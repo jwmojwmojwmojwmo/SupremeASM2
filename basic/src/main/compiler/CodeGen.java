@@ -54,6 +54,18 @@ public class CodeGen {
         }
     }
 
+    // Every leaf needs one register
+    private int need(Node value) {
+        if (value instanceof Node.BinaryExpression b) {
+            int l = need(b.left());
+            int r = need(b.right());
+            return l == r ? l + 1 : Math.max(l, r);
+        }
+        if (value instanceof Node.UnaryExpression u)
+            return need(u.operand());
+        return 1;
+    }
+
     // Evaluate expression into scratch register `reg`; result lands in `reg`.
     private int evalExpr(Node value, int reg, Sema.Result sema) {
         if (reg > 9)
@@ -64,8 +76,14 @@ public class CodeGen {
             return reg;
         }
         if (value instanceof Node.BinaryExpression expr) {
-            evalExpr(expr.left(), reg, sema); // left -> reg
-            evalExpr(expr.right(), reg + 1, sema); // right -> reg+1
+            // Sethi-Ullman: evaluate the child that needs more registers first
+            int regLeft = need(expr.left());
+            int regRight = need(expr.right());
+            boolean rightFirst = regRight > regLeft;
+            evalExpr(rightFirst ? expr.right() : expr.left(), reg, sema);
+            evalExpr(rightFirst ? expr.left() : expr.right(), reg + 1, sema);
+            int leftReg = rightFirst ? reg + 1 : reg;
+            int rightReg = rightFirst ? reg : reg + 1;
             String mnemonic = switch (expr.op()) {
                 case "+" -> "add";
                 case "-" -> "sub";
@@ -79,7 +97,7 @@ public class CodeGen {
                 case "^" -> "xor";
                 default -> throw new IllegalStateException("unknown operator " + expr.op());
             };
-            emit(mnemonic + " %" + reg + ", %" + (reg + 1) + ", %" + reg + ";");
+            emit(mnemonic + " %" + leftReg + ", %" + rightReg + ", %" + reg + ";");
             return reg;
         }
         if (value instanceof Node.UnaryExpression u) {

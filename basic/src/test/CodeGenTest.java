@@ -311,9 +311,7 @@ public class CodeGenTest extends CompilerTestBase {
                 DECLARE VARIABLE x AS int;
                 x <- a << (b >> 1);
                 """;
-        assertAsmContains(code, "ld #1, %6;");
-        assertAsmContains(code, "shr %5, %6, %5;");
-        assertAsmContains(code, "shl %4, %5, %4;");
+        assertAsmContains(code, "ld #12, %5;");
     }
 
     @Test
@@ -378,5 +376,47 @@ public class CodeGenTest extends CompilerTestBase {
                 """;
         // all in place in %4
         assertAsmContains(code, "not %4, %4;");
+    }
+
+    @Test
+    void testCodeGenSethi() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE b AS int;
+                DECLARE VARIABLE c AS int;
+                DECLARE VARIABLE d AS int;
+                DECLARE VARIABLE e AS int;
+                DECLARE VARIABLE f AS int;
+                DECLARE VARIABLE g AS int;
+                DECLARE VARIABLE h AS int;
+                DECLARE VARIABLE i AS int;
+                DECLARE VARIABLE j AS int;
+                DECLARE VARIABLE k AS int;
+                DECLARE VARIABLE x AS int;
+                x <- (a+(b+(c+(d+(e+(f^(g/(h*(i-(~j+k))))))))));
+                """;
+        assertAsmContains(code, "ld #48, %5;");
+
+    }
+
+    @Test
+    void testCodeGenNotEnoughRegs() {
+        // It uses '-' because subtraction is not associative, so the tree can't be
+        // regrouped to need fewer registers.
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE a AS int;
+                DECLARE VARIABLE x AS int;
+                x <- ((((((a - a) - (a - a)) - ((a - a) - (a - a)))
+                         - (((a - a) - (a - a)) - ((a - a) - (a - a))))
+                        - ((((a - a) - (a - a)) - ((a - a) - (a - a)))
+                           - (((a - a) - (a - a)) - ((a - a) - (a - a)))))
+                       - (((((a - a) - (a - a)) - ((a - a) - (a - a)))
+                           - (((a - a) - (a - a)) - ((a - a) - (a - a))))
+                          - ((((a - a) - (a - a)) - ((a - a) - (a - a)))
+                             - (((a - a) - (a - a)) - ((a - a) - (a - a))))));
+                """;
+        assertAsmContains(code, "ldi %14+#0, %4;");
     }
 }
