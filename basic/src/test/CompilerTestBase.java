@@ -63,6 +63,7 @@ public abstract class CompilerTestBase {
 
     protected void assertAsmContains(String code, String expectedInstruction) {
         String asm = generateAsm(code);
+        System.out.println(asm);
         assertTrue(asm.contains(expectedInstruction),
                 "Expected ASM to contain '" + expectedInstruction + "', but got:\n" + asm);
     }

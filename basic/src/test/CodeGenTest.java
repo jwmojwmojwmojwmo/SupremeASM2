@@ -420,4 +420,156 @@ public class CodeGenTest extends CompilerTestBase {
                 """;
         assertAsmContains(code, "sti %4, %14+#4");
     }
+
+    // ---- array code generation ----
+
+    @Test
+    void testCodeGenArrayLiteralIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 10;
+                grid[0] <- 42;
+                """;
+        assertAsmContains(code, "ld #42, %5;");
+        assertAsmContains(code, "sti %5, %14+#0;");
+    }
+
+    @Test
+    void testCodeGenArrayLiteralIndexNonZero() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 10;
+                grid[3] <- 42;
+                """;
+        assertAsmContains(code, "ld #42, %5;");
+        assertAsmContains(code, "sti %5, %14+#12;");
+    }
+
+    @Test
+    void testCodeGenArrayVariableIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 10;
+                DECLARE VARIABLE i AS int;
+                i <- 5;
+                grid[i] <- 42;
+                """;
+        // Should compute address: %14 + (i * 4)
+        assertAsmContains(code, "mul");
+        assertAsmContains(code, "sti %5, %10+#0;");
+    }
+
+    @Test
+    void testCodeGenArrayRead() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 10;
+                DECLARE VARIABLE x AS int;
+                grid[5] <- 42;
+                x <- grid[5];
+                """;
+        assertAsmContains(code, "ldi %14+#20, %5;");
+        assertAsmContains(code, "sti %5, %14+#40;");
+    }
+
+    @Test
+    void testCodeGenArrayFieldAccess() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LENGTH 4;
+                x OF grid[0] <- 10;
+                """;
+        assertAsmContains(code, "ld #10, %5;");
+        assertAsmContains(code, "sti %5, %14+#0;");
+    }
+
+    @Test
+    void testCodeGenArrayFieldAccessNonZero() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LENGTH 4;
+                y OF grid[0] <- 20;
+                """;
+        assertAsmContains(code, "ld #20, %5;");
+        assertAsmContains(code, "sti %5, %14+#4;");
+    }
+
+    @Test
+    void testCodeGenArrayFieldAccessNonZeroElement() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LENGTH 4;
+                x OF grid[2] <- 30;
+                """;
+        assertAsmContains(code, "ld #30, %5;");
+        assertAsmContains(code, "sti %5, %14+#16;");
+    }
+
+    @Test
+    void testCodeGenArrayFieldAccessVariableIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LENGTH 4;
+                DECLARE VARIABLE i AS int;
+                i <- 1;
+                x OF grid[i] <- 40;
+                """;
+        // Should compute address: %14 + (i * 8) + 0
+        assertAsmContains(code, "ld #8, %11;");
+        assertAsmContains(code, "mul");
+    }
+
+    @Test
+    void testCodeGenArrayFieldRead() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; END;
+                DECLARE ARRAY grid AS Point LENGTH 4;
+                DECLARE VARIABLE myX AS int;
+                x OF grid[0] <- 10;
+                myX <- x OF grid[0];
+                """;
+        assertAsmContains(code, "ldi %14+#0, %5;");
+        assertAsmContains(code, "sti %5, %14+#16;");
+    }
+
+    @Test
+    void testCodeGenLenOfArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 42;
+                DECLARE VARIABLE len AS int;
+                len <- LENGTH OF grid;
+                """;
+        assertAsmContains(code, "ld #42, %5;");
+        assertAsmContains(code, "sti %5, %14+#168;");
+    }
+
+    @Test
+    void testCodeGenLenInExpression() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LENGTH 10;
+                DECLARE VARIABLE total AS int;
+                total <- LENGTH OF grid * 4;
+                """;
+        assertAsmContains(code, "ld #40, %5;");
+    }
+
+    @Test
+    void testCodeGenArrayElementCopy() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY src AS int LENGTH 10;
+                DECLARE ARRAY dst AS int LENGTH 10;
+                src[5] <- 42;
+                dst[3] <- src[5];
+                """;
+        assertAsmContains(code, "ldi %14+#20, %5;");
+        assertAsmContains(code, "sti %5, %14+#52;");
+    }
 }

@@ -404,6 +404,7 @@ public class SemaTest extends CompilerTestBase {
                 """;
         assertFails(code, "cannot do arithmetic");
     }
+
     @Test
     void testArithmeticOn8ByteRejected() {
         String code = """
@@ -465,7 +466,6 @@ public class SemaTest extends CompilerTestBase {
         assertCompiles(code);
     }
 
-
     @Test
     void testShiftFoldedValueOverflow() {
         // constants must fit at compile time, same rule as 2147483647 + 1
@@ -518,5 +518,258 @@ public class SemaTest extends CompilerTestBase {
                 b <- ~128;
                 """;
         assertFails(code, "does not fit in byte"); // -129
+    }
+
+    // ---- arrays: valid ----
+
+    @Test
+    void testArrayDeclaration() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayLiteralIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                grid[0] <- 42;
+                grid[9] <- 99;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayVariableIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE VARIABLE i AS int;
+                i <- 5;
+                grid[i] <- 42;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayFieldAccess() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LEN 4;
+                x OF grid[0] <- 10;
+                y OF grid[1] <- 20;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayFieldAccessVariableIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE VARIABLE i AS int;
+                i <- 2;
+                x OF grid[i] <- 99;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayOfArrays() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY matrix AS int LEN 16;
+                matrix[0] <- 42;
+                matrix[15] <- 99;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayRead() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE VARIABLE x AS int;
+                grid[5] <- 42;
+                x <- grid[5];
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayFieldRead() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; END;
+                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE VARIABLE myX AS int;
+                x OF grid[0] <- 10;
+                myX <- x OF grid[0];
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testLenOfArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 42;
+                DECLARE VARIABLE len AS int;
+                len <- LEN OF grid;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testLenInExpression() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE VARIABLE total AS int;
+                total <- LEN OF grid * 4;
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayCopyElementToElement() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY src AS int LEN 10;
+                DECLARE ARRAY dst AS int LEN 10;
+                src[0] <- 42;
+                dst[1] <- src[0];
+                """;
+        assertCompiles(code);
+    }
+
+    @Test
+    void testArrayFieldToField() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; y AS int; END;
+                DECLARE ARRAY grid AS Point LEN 4;
+                x OF grid[0] <- 10;
+                y OF grid[1] <- x OF grid[0];
+                """;
+        assertCompiles(code);
+    }
+
+    // ---- arrays: failures ----
+
+    @Test
+    void testArrayOutOfBounds() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                grid[10] <- 42;
+                """;
+        assertFails(code, "array index 10 out of bounds");
+    }
+
+    @Test
+    void testArrayNegativeIndex() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                grid[-1] <- 42;
+                """;
+        assertFails(code, "array index -1 out of bounds");
+    }
+
+    @Test
+    void testArrayUnknownType() {
+        String code = """
+                DECLARE ARRAY grid AS unknown LEN 10;
+                """;
+        assertFails(code, "unknown type 'unknown'");
+    }
+
+    @Test
+    void testArrayZeroLength() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 0;
+                """;
+        assertFails(code, "array length must be at least 1");
+    }
+
+    @Test
+    void testArrayFrameOverflow() {
+        String code = """
+                DECLARE TYPE huge SIZE 8192;
+                DECLARE ARRAY grid AS huge LEN 5;
+                """;
+        assertFails(code, "program exceeds the 32767-byte stack frame");
+    }
+
+    @Test
+    void testArrayIndexNonInteger() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE STRUCT Point THEN x AS int; END;
+                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE VARIABLE p AS Point;
+                grid[p] <- 42;
+                """;
+        assertFails(code, "array index must be a 1- or 4-byte integer type");
+    }
+
+    @Test
+    void testArrayAccessNonArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                x[0] <- 42;
+                """;
+        assertFails(code, "'x' is not an array");
+    }
+
+    @Test
+    void testArrayFieldAccessNonArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                field OF x[0] <- 42;
+                """;
+        assertFails(code, "'x' is not an array");
+    }
+
+    @Test
+    void testLenOfNonArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE VARIABLE x AS int;
+                DECLARE VARIABLE len AS int;
+                len <- LEN OF x;
+                """;
+        assertFails(code, "LEN can only be applied to arrays");
+    }
+
+    @Test
+    void testArrayArithmeticForbidden() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE VARIABLE x AS int;
+                x <- grid + 1;
+                """;
+        assertFails(code, "cannot use array 'grid' directly in expression");
+    }
+
+    @Test
+    void testArrayAssignWholeArray() {
+        String code = """
+                DECLARE TYPE int SIZE 4;
+                DECLARE ARRAY grid AS int LEN 10;
+                grid <- 42;
+                """;
+        assertFails(code, "cannot assign to whole array");
     }
 }

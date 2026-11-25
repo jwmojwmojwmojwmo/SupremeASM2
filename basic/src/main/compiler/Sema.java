@@ -29,10 +29,19 @@ public class Sema {
         }
     }
 
-    public record Variable(String name, Type type, int offset, int line) {
+    // arrayLength == 0 means its not an array, otherwise it is in fact an array
+    public record Variable(String name, Type type, int offset, int line, long arrayLength) {
+        public Variable(String name, Type type, int offset, int line) {
+            this(name, type, offset, line, 0);
+        }
+
+        public boolean isArray() {
+            return arrayLength > 0;
+        }
     }
 
-    public record Result(Map<String, Variable> vars, int frameSize) {
+    // program is the desugared tree for CodeGen to consume
+    public record Result(Map<String, Variable> vars, int frameSize, Node.Program program) {
     }
 
     private static final int MAX_FRAME = 32767;
@@ -40,6 +49,7 @@ public class Sema {
     public Result analyze(Node.Program program) {
         Map<String, Variable> vars = new LinkedHashMap<>();
         Map<String, Type> types = new HashMap<>();
+        List<Node> outStatements = new ArrayList<>();
         int offset = 0;
 
         for (Node n : program.statements()) {
@@ -50,6 +60,7 @@ public class Sema {
                     if (types.containsKey(t.name()))
                         throw new BadParseException("type '" + t.name() + "' already defined", t.line());
                     types.put(t.name(), new Type(t.name(), t.size()));
+                    outStatements.add(t);
                 }
 
                 case Node.StructDeclaration s -> {
@@ -59,7 +70,7 @@ public class Sema {
                     int currentOffset = 0;
                     List<FieldLayout> layouts = new ArrayList<>();
                     Set<String> fieldNames = new HashSet<>();
-                    for (Node.StructField f : s.fields()) {
+                    for (Node.StructFieldDeclaration f : s.fields()) {
                         if (!fieldNames.add(f.name()))
                             throw new BadParseException("duplicate field '" + f.name()
                                     + "' in struct '" + s.name() + "'", f.line());
@@ -73,6 +84,7 @@ public class Sema {
                         currentOffset += fieldType.size();
                     }
                     types.put(s.name(), new Type(s.name(), currentOffset, layouts));
+                    outStatements.add(s);
                 }
 
                 case Node.VariableDeclaration d -> {
@@ -89,48 +101,85 @@ public class Sema {
 
                     vars.put(d.name(), new Variable(d.name(), vType, offset, d.line()));
                     offset += vType.size();
+                    outStatements.add(d);
                 }
 
-                case Node.ValueAssignment a -> {
-                    // Resolve the type of the variable on the left
-                    Type targetType = resolveTargetType(a.name(), null, a.line(), vars);
-                    // Validate the value on the right
-                    checkRHS(a.value(), targetType, a.line(), vars);
+                case Node.ArrayDeclaration d -> {
+                    if (vars.containsKey(d.name())) {
+                        Variable old = vars.get(d.name());
+                        throw new BadParseException(
+                                "variable '" + d.name() + "' already declared on line " + old.line(), d.line());
+                    }
+                    Type elemType = types.get(d.typeName());
+                    if (elemType == null)
+                        throw new BadParseException("unknown type '" + d.typeName() + "'", d.line());
+                    if (d.length() < 1)
+                        throw new BadParseException("array length must be at least 1", d.line());
+
+                    long total = d.length() * (long) elemType.size();
+                    if (total > MAX_FRAME - offset)
+                        throw new BadParseException("program exceeds the " + MAX_FRAME + "-byte stack frame", d.line());
+
+                    vars.put(d.name(), new Variable(d.name(), elemType, offset, d.line(), d.length()));
+                    offset += (int) total;
+                    outStatements.add(d);
                 }
 
-                case Node.FieldValueAssignment fa -> {
-                    // Resolve the type of the field on the left
-                    Type targetType = resolveTargetType(fa.structName(), fa.fieldName(), fa.line(), vars);
-                    // Validate the value on the right
-                    checkRHS(fa.value(), targetType, fa.line(), vars);
-                }   
+                case Node.AssignmentStatement a -> {
+                    // desugar first so LEN becomes a literal before the lvalue check
+                    Node target = desugar(a.target(), vars);
+                    Node value = desugar(a.value(), vars);
+
+                    if (!(target instanceof Node.VariableAccess
+                            || target instanceof Node.FieldAccess
+                            || target instanceof Node.ArrayAccess))
+                        throw new BadParseException("cannot assign to this expression", a.line());
+
+                    if (target instanceof Node.VariableAccess va) {
+                        Variable v = vars.get(va.name());
+                        if (v == null)
+                            throw new BadParseException("undeclared variable '" + va.name() + "'", a.line());
+                        if (v.isArray())
+                            throw new BadParseException("cannot assign to whole array '" + va.name() + "'", a.line());
+                    }
+
+                    Type targetType = inferExprType(target, vars);
+                    checkRHS(value, targetType, a.line(), vars);
+                    outStatements.add(new Node.AssignmentStatement(target, value, a.line()));
+                }
 
                 default -> throw new IllegalStateException("not a statement: " + n);
-
             }
         }
 
-        return new Result(vars, offset);
+        return new Result(vars, offset, new Node.Program(outStatements));
     }
 
-    // Resolves the target type for an assignment (handles both vars and fields)
-    private Type resolveTargetType(String varName, String fieldName, int line, Map<String, Variable> vars) {
-        Variable v = vars.get(varName);
-        if (v == null)
-            throw new BadParseException("undeclared variable '" + varName + "'", line);
-
-        if (fieldName == null) {
-            // It's a regular variable assignment
-            return v.type();
-        } else {
-            // It's a field assignment
-            if (v.type().fields().isEmpty())
-                throw new BadParseException("'" + varName + "' is not a struct", line);
-            FieldLayout field = v.type().getField(fieldName);
-            if (field == null)
-                throw new BadParseException("struct '" + v.type().name() + "' has no field '" + fieldName + "'", line);
-            return field.type();
+    private Node desugar(Node n, Map<String, Variable> vars) {
+        if (n instanceof Node.FieldAccess fa) {
+            Node base = desugar(fa.base(), vars);
+            Variable arr = arrayVar(base, vars);
+            if (arr != null && fa.fieldName().equalsIgnoreCase("LENGTH"))
+                return new Node.NumberLiteral(arr.arrayLength(), fa.line());
+            return new Node.FieldAccess(base, fa.fieldName(), fa.line());
         }
+        if (n instanceof Node.ArrayAccess aa)
+            return new Node.ArrayAccess(desugar(aa.base(), vars), desugar(aa.index(), vars), aa.line());
+        if (n instanceof Node.BinaryExpression be)
+            return new Node.BinaryExpression(be.op(), desugar(be.left(), vars), desugar(be.right(), vars), be.line());
+        if (n instanceof Node.UnaryExpression ue)
+            return new Node.UnaryExpression(ue.op(), desugar(ue.operand(), vars), ue.line());
+        return n;
+    }
+
+    // return the variable if the base is a VariableAccess to an array, otherwise null
+    private Variable arrayVar(Node base, Map<String, Variable> vars) {
+        if (base instanceof Node.VariableAccess va) {
+            Variable v = vars.get(va.name());
+            if (v != null && v.isArray())
+                return v;
+        }
+        return null;
     }
 
     // Validates the RHS against the target type
@@ -140,30 +189,9 @@ public class Sema {
                 throw new BadParseException("cannot assign a literal to the struct '"
                         + targetType.name() + "'", line);
             checkLiteralFits(num.value(), targetType, line);
-
-        } else if (value instanceof Node.VariableReference ref) {
-            Variable v_src = vars.get(ref.name());
-            if (v_src == null)
-                throw new BadParseException("undeclared variable '" + ref.name() + "'", ref.line());
-            checkAssignable(v_src.type(), targetType, line);
-
-        } else if (value instanceof Node.FieldVariableReference ref) {
-            Variable v_src = vars.get(ref.structName());
-            if (v_src == null)
-                throw new BadParseException("undeclared variable '" + ref.structName() + "'", ref.line());
-            if (v_src.type().fields().isEmpty())
-                throw new BadParseException("'" + ref.structName() + "' is not a struct", ref.line());
-
-            FieldLayout srcField = v_src.type().getField(ref.fieldName());
-            if (srcField == null)
-                throw new BadParseException(
-                        "struct '" + v_src.type().name() + "' has no field '" + ref.fieldName() + "'", ref.line());
-            checkAssignable(srcField.type(), targetType, line);
-        } else if (value instanceof Node.BinaryExpression || value instanceof Node.UnaryExpression) {
-            Type exprType = inferExprType(value, vars);
-            checkAssignable(exprType, targetType, line);
         } else {
-            throw new IllegalStateException("unexpected value node: " + value);
+            Type srcType = inferExprType(value, vars);
+            checkAssignable(srcType, targetType, line);
         }
     }
 
@@ -188,34 +216,57 @@ public class Sema {
                     + t.name() + "'", line);
     }
 
-    // returns the overal type of the expression
+    // Returns the overall type of an expression. Access chains resolve recursively;
+    // a bare array used as a value is an error.
     private Type inferExprType(Node value, Map<String, Variable> vars) {
-        if (value instanceof Node.NumberLiteral) {
+        if (value instanceof Node.NumberLiteral)
             return null; // untyped literal
-        }
-        if (value instanceof Node.VariableReference ref) {
+
+        if (value instanceof Node.VariableAccess ref) {
             Variable v = vars.get(ref.name());
             if (v == null)
                 throw new BadParseException("undeclared variable '" + ref.name() + "'", ref.line());
+            if (v.isArray())
+                throw new BadParseException("cannot use array '" + ref.name() + "' as a value", ref.line());
             return v.type();
         }
-        if (value instanceof Node.FieldVariableReference ref) {
-            Variable v = vars.get(ref.structName());
-            if (v == null)
-                throw new BadParseException("undeclared variable '" + ref.structName() + "'", ref.line());
-            if (v.type().fields().isEmpty())
-                throw new BadParseException("'" + ref.structName() + "' is not a struct", ref.line());
-            FieldLayout field = v.type().getField(ref.fieldName());
+
+        if (value instanceof Node.ArrayAccess aa) {
+            Variable arr = resolveArrayBase(aa.base(), vars, aa.line());
+            Type idxType = inferExprType(aa.index(), vars);
+            if (idxType != null && (!idxType.fields().isEmpty()
+                    || (idxType.size() != 1 && idxType.size() != 4)))
+                throw new BadParseException("array index must be a 1- or 4-byte integer type", aa.line());
+            if (aa.index() instanceof Node.NumberLiteral n
+                    && (n.value() < 0 || n.value() >= arr.arrayLength()))
+                throw new BadParseException("index " + n.value() + " out of bounds for array '"
+                        + arr.name() + "' of length " + arr.arrayLength(), aa.line());
+            return arr.type(); // element type
+        }
+
+        if (value instanceof Node.FieldAccess fa) {
+            Variable arr = arrayVar(fa.base(), vars);
+            if (arr != null)
+                throw new BadParseException("array '" + arr.name() + "' has no field '"
+                        + fa.fieldName() + "' — index it first", fa.line());
+
+            Type baseType = inferExprType(fa.base(), vars);
+            if (baseType == null)
+                throw new BadParseException("cannot access field '" + fa.fieldName()
+                        + "' of a literal", fa.line());
+            if (baseType.fields().isEmpty())
+                throw new BadParseException("'" + baseType.name() + "' is not a struct", fa.line());
+            FieldLayout field = baseType.getField(fa.fieldName());
             if (field == null)
-                throw new BadParseException("struct '" + v.type().name() + "' has no field '"
-                        + ref.fieldName() + "'", ref.line());
+                throw new BadParseException("struct '" + baseType.name() + "' has no field '"
+                        + fa.fieldName() + "'", fa.line());
             return field.type();
         }
+
         if (value instanceof Node.BinaryExpression expr) {
             Type leftType = inferExprType(expr.left(), vars);
             Type rightType = inferExprType(expr.right(), vars);
 
-            // Resolve operand type: literals adopt the typed side
             Type operandType;
             if (leftType == null)
                 operandType = rightType;
@@ -226,28 +277,40 @@ public class Sema {
                 operandType = leftType;
             }
             checkOperandType(operandType, expr.line());
-            // a literal operand adopts operandType, so it has to fit in it
-            // (the right side of a shift is a bit count, not a value, so it has its own 0..31 check below)
+
             boolean isShift = expr.op().equals("<<") || expr.op().equals(">>");
             if (expr.left() instanceof Node.NumberLiteral n)
                 checkLiteralFits(n.value(), operandType, expr.line());
             if (!isShift && expr.right() instanceof Node.NumberLiteral n)
                 checkLiteralFits(n.value(), operandType, expr.line());
-            if (expr.op().equals("<<") || expr.op().equals(">>")) {
-                if (expr.right() instanceof Node.NumberLiteral n && (n.value() < 0 || n.value() > 31))
-                    throw new BadParseException("shift count " + n.value() + " outside 0..31", expr.line());
-            }
+            if (isShift && expr.right() instanceof Node.NumberLiteral n
+                    && (n.value() < 0 || n.value() > 31))
+                throw new BadParseException("shift count " + n.value() + " outside 0..31", expr.line());
             return operandType;
         }
+
         if (value instanceof Node.UnaryExpression u) {
             Type t = inferExprType(u.operand(), vars);
             checkOperandType(t, u.line());
             return t;
         }
+
         throw new IllegalStateException("unexpected value node: " + value);
     }
 
-    // type checking
+    private Variable resolveArrayBase(Node base, Map<String, Variable> vars, int line) {
+        if (base instanceof Node.VariableAccess va) {
+            Variable v = vars.get(va.name());
+            if (v == null)
+                throw new BadParseException("undeclared variable '" + va.name() + "'", line);
+            if (!v.isArray())
+                throw new BadParseException("'" + va.name() + "' is not an array", line);
+            return v;
+        }
+        throw new BadParseException("cannot index this expression", line);
+    }
+
+    // nominal type checking
     private void checkAssignable(Type src, Type tgt, int line) {
         if (!src.name().equals(tgt.name()))
             throw new BadParseException("cannot assign " + src.name() + " to " + tgt.name(), line);

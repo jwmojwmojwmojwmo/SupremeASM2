@@ -153,9 +153,50 @@ public class ParserTest extends CompilerTestBase {
         assertParses("x <- ~~a;");
     }
 
-
     @Test
     void testParsesNotNegativeLiteral() {
         assertParses("x <- ~-5;");
+    }
+
+    // ---- array syntax ----
+
+    @Test
+    void testParsesArrayDeclaration() {
+        assertParses("DECLARE ARRAY grid AS int LEN 10;");
+    }
+
+    @Test
+    void testParsesArrayAccess() {
+        assertParses("grid[0] <- 10;");
+    }
+
+    @Test
+    void testParsesArrayAccessVariableIndex() {
+        assertParses("grid[i] <- 10;");
+    }
+
+    @Test
+    void testParsesFieldOfArrayElement() {
+        assertParses("x OF grid[0] <- 10;");
+    }
+
+    @Test
+    void testParsesFieldOfArrayElementVariableIndex() {
+        assertParses("x OF grid[i] <- 10;");
+    }
+
+    @Test
+    void testParsesLenOfArray() {
+        assertParses("len <- LEN OF grid;");
+    }
+
+    @Test
+    void testParsesNestedArrayAccess() {
+        assertParses("grid[other[i]] <- 10;");
+    }
+
+    @Test
+    void testParsesArrayAccessWithExpression() {
+        assertParses("grid[i + 1] <- 10;");
     }
 }

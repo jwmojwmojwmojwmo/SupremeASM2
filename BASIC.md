@@ -174,6 +174,19 @@ DECLARE VARIABLE origin  AS Point;
   and the error message tells you the line of the original declaration.
 - The total frame is capped at **32767 bytes**.
 
+### Arrays (`DECLARE ARRAY`) (IN PROGRESS)
+
+```
+DECLARE ARRAY arr AS int LENGTH 4;
+// access with []
+arr[0] // 0 indexed
+arr[1]
+// since this is constant, compiler can just replace LENGTH of arr in place with the length of array
+myInt <- LENGTH of arr;
+```
+
+- This adds an array on the stack with a constant length.
+
 ---
 
 ## Memory Model

@@ -6,8 +6,10 @@ import java.util.function.Supplier;
 
 import basic.src.main.exceptions.BadParseException;
 
-// Represents the Parser in the compiler. The job is to turn a list of tokens into an AST, checking grammar rules (to create valid AST), but not semantics.
+// Represents the Parser in the compiler. The job is to turn a list of tokens into an AST,
+// checking grammar rules (to create valid AST), but not semantics.
 public class Parser {
+
     private final List<Token> tokens;
     private int pos;
 
@@ -73,34 +75,23 @@ public class Parser {
         if (isKw("DECLARE"))
             return parseDeclare();
 
-        if (is(TokenType.Type.IDENTIFIER)) {
-            boolean isFieldAssign = false;
-            if (pos + 1 < tokens.size()) {
-                Token next = tokens.get(pos + 1);
-                if (next.type() == TokenType.Type.KEYWORD && next.value().equals("OF")) {
-                    isFieldAssign = true;
-                }
-            }
-
-            if (isFieldAssign)
-                return parseFieldAssign();
+        if (is(TokenType.Type.IDENTIFIER))
             return parseAssign();
-        }
 
         throw new BadParseException("expected DECLARE or a variable name, found " + peek(), peek().line());
     }
 
     private Node parseDeclare() {
         advance();
-
         if (isKw("VARIABLE"))
             return parseVariableDecl();
         if (isKw("TYPE"))
             return parseTypeDecl();
         if (isKw("STRUCT"))
             return parseStructDecl();
-
-        throw new BadParseException("expected VARIABLE, TYPE, or STRUCT after DECLARE", peek().line());
+        if (isKw("ARRAY"))
+            return parseArrayDecl();
+        throw new BadParseException("expected VARIABLE, TYPE, STRUCT, or ARRAY after DECLARE", peek().line());
     }
 
     private Node parseTypeDecl() {
@@ -115,51 +106,59 @@ public class Parser {
     private Node parseStructDecl() {
         advance();
         Token name = expect(TokenType.Type.IDENTIFIER);
-
         expectKw("THEN");
-
-        List<Node.StructField> fields = new ArrayList<>();
+        List<Node.StructFieldDeclaration> fields = new ArrayList<>();
         while (!isKw("END")) {
             Token fName = expect(TokenType.Type.IDENTIFIER);
             expectKw("AS");
             Token fType = expect(TokenType.Type.IDENTIFIER);
             expectOp(";");
-            fields.add(new Node.StructField(fName.value(), fType.value(), fName.line()));
+            fields.add(new Node.StructFieldDeclaration(fName.value(), fType.value(), fName.line()));
         }
         advance();
         expectOp(";");
-
         return new Node.StructDeclaration(name.value(), fields, name.line());
     }
 
     private Node parseVariableDecl() {
         advance();
         Token name = expect(TokenType.Type.IDENTIFIER);
-
         expectKw("AS");
-
         Token typeName = expect(TokenType.Type.IDENTIFIER);
         expectOp(";");
-
         return new Node.VariableDeclaration(name.value(), typeName.value(), name.line());
     }
 
-    private Node parseAssign() {
-        Token name = advance();
-        expectOp("<-");
-        Node value = parseExpression();
+    private Node parseArrayDecl() {
+        advance(); // ARRAY
+        Token name = expect(TokenType.Type.IDENTIFIER);
+        expectKw("AS");
+        Token typeName = expect(TokenType.Type.IDENTIFIER);
+
+        Token len = expect(TokenType.Type.IDENTIFIER);
+        if (!len.value().equalsIgnoreCase("LENGTH"))
+            throw new BadParseException("expected LENGTH but found " + len, len.line());
+
+        Token n = expect(TokenType.Type.NUMBER);
         expectOp(";");
-        return new Node.ValueAssignment(name.value(), value, name.line());
+
+        long length;
+        try {
+            length = Long.parseLong(n.value());
+        } catch (NumberFormatException e) {
+            throw new BadParseException("length out of range: " + n.value(), n.line());
+        }
+
+        return new Node.ArrayDeclaration(name.value(), typeName.value(), length, name.line());
     }
 
-    private Node parseFieldAssign() {
-        Token fieldName = advance();
-        expectKw("OF");
-        Token varName = expect(TokenType.Type.IDENTIFIER);
+    private Node parseAssign() {
+        int line = peek().line();
+        Node target = parseExpression();
         expectOp("<-");
         Node value = parseExpression();
         expectOp(";");
-        return new Node.FieldValueAssignment(varName.value(), fieldName.value(), value, varName.line());
+        return new Node.AssignmentStatement(target, value, line);
     }
 
     // "recursively" parse an expression by calling a parse method for each level of
@@ -210,9 +209,7 @@ public class Parser {
         }
     }
 
-    // factor = NUMBER | IDENTIFIER [OF IDENTIFIER] | '(' expression ')' | '-'
-    // a binary expression contains two factors, a unary expression contains...well
-    // one duh
+    // factor = unary | '(' expression ')' | NUMBER | access chain
     private Node parseFactor() {
         if (isOp("~") || isOp("-")) {
             Token op = advance();
@@ -232,12 +229,14 @@ public class Parser {
             }
             return new Node.UnaryExpression(op.value(), operand, op.line());
         }
+
         if (isOp("(")) {
             advance();
             Node inner = parseExpression();
             expectOp(")");
             return inner;
         }
+
         if (is(TokenType.Type.NUMBER)) {
             Token n = advance();
             long number;
@@ -248,16 +247,33 @@ public class Parser {
             }
             return new Node.NumberLiteral(number, n.line());
         }
-        if (is(TokenType.Type.IDENTIFIER)) {
-            Token first = advance();
-            if (isKw("OF")) {
-                advance();
-                Token varName = expect(TokenType.Type.IDENTIFIER);
-                return new Node.FieldVariableReference(varName.value(), first.value(), first.line());
-            }
-            return new Node.VariableReference(first.value(), first.line());
-        }
+
+        if (is(TokenType.Type.IDENTIFIER))
+            return parseAccess();
+
         throw new BadParseException("expected a number, variable, or '('", peek().line());
+    }
+
+    // an access chain: a variable with optional indexing, or field OF another chain.
+    // brackets are postfix and bind tighter than OF. OF recurses right-associatively,
+    // so x OF topLeft OF r works and is x OF (topLeft OF r)
+    private Node parseAccess() {
+        Token first = expect(TokenType.Type.IDENTIFIER);
+
+        if (isKw("OF")) {
+            advance();
+            Node base = parseAccess();
+            return new Node.FieldAccess(base, first.value(), first.line());
+        }
+
+        Node node = new Node.VariableAccess(first.value(), first.line());
+        while (isOp("[")) {
+            advance();
+            Node index = parseExpression();
+            expectOp("]");
+            node = new Node.ArrayAccess(node, index, first.line());
+        }
+        return node;
     }
 
     // If both sides are literals, compute now; otherwise build a BinaryExpression.
@@ -296,7 +312,6 @@ public class Parser {
                             throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
                         yield l.value() >> r.value();
                     }
-
                     default -> throw new IllegalStateException("unknown operator " + op);
                 };
             } catch (ArithmeticException e) {
@@ -314,5 +329,4 @@ public class Parser {
             throw new BadParseException("size out of range: " + t.value(), t.line());
         }
     }
-
 }
