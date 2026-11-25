@@ -3,7 +3,7 @@ CC = cl
 
 # Combine flags! 
 # Added /Zi for debug symbols if it crashes
-CFLAGS = /nologo /W3 /O2 /GL /arch:AVX2 /Iinclude /Zi /Fd$(OBJDIR)\
+CFLAGS = /nologo /W3 /O2 /GL /arch:AVX2 /Iinclude /Zi /Fd$(OBJDIR)\vc.pdb
 
 # Directories
 SRCDIR = src

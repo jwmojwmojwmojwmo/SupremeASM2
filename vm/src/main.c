@@ -35,7 +35,8 @@
     r[r] -> r[s]    20rs----, mov
     r[r]++      21r-----, inc
     r[r]--      22r-----, dec
-    if v < 0: r[r] >> v -> r[s] else: r[r] << v -> r[s]     23rs--vv, bitshift right if v < 0, otherwise bitshift left (signed v duh)
+    r[r] << r[s] -> r[o]    23rso--0, shl
+    r[r] >> r[s] -> r[o]    23rso--1, shr
     r[r] + r[s] -> r[o]     24rso---, add
     r[r] - r[s] -> r[o]     25rso---, sub
     r[r] * r[s] -> r[o]     26rso---, mul
@@ -89,8 +90,9 @@ int main(int argc, char *argv[])
             reg_dump = true;
         }
     }
+    int total_ram = EIGHT_MB * 2;
     CPU cpu;
-    init_os(&cpu, EIGHT_MB * 2);
+    init_os(&cpu, total_ram);
     Status status;
     uint32_t pc = load_program(argv[1], &status);
     if (status != STATUS_OK)
@@ -107,7 +109,7 @@ int main(int argc, char *argv[])
     if (mem_dump)
     {
         printf("\n--- Memory Dump ---\n");
-        for (int i = 0; i < EIGHT_MB; i += 1)
+        for (int i = 0; i < total_ram; i += 1)
         {
             uint8_t val = memory[i];
             if (val != 0)
