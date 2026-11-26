@@ -74,7 +74,9 @@ public class Parser {
     private Node parseStatement() {
         if (isKw("DECLARE"))
             return parseDeclare();
-
+        if (isKw("PRINT")) {
+            return parsePrint();
+        }
         if (is(TokenType.Type.IDENTIFIER))
             return parseAssign();
 
@@ -150,6 +152,13 @@ public class Parser {
         }
 
         return new Node.ArrayDeclaration(name.value(), typeName.value(), length, name.line());
+    }
+
+    private Node parsePrint() {
+        Token kw = advance();
+        Node value = parseExpression();
+        expectOp(";");
+        return new Node.PrintStatement(value, kw.line());
     }
 
     private Node parseAssign() {
@@ -248,14 +257,25 @@ public class Parser {
             return new Node.NumberLiteral(number, n.line());
         }
 
+        if (is(TokenType.Type.CHAR)) {
+            Token t = advance();
+            return new Node.NumberLiteral(t.value().charAt(0), t.line());
+        }
+        if (is(TokenType.Type.STRING)) {
+            Token t = advance();
+            return new Node.StringLiteral(decodeEscapes(t.value(), t.line()), t.line());
+        }
+
         if (is(TokenType.Type.IDENTIFIER))
             return parseAccess();
 
         throw new BadParseException("expected a number, variable, or '('", peek().line());
     }
 
-    // an access chain: a variable with optional indexing, or field OF another chain.
-    // brackets are postfix and bind tighter than OF. OF recurses right-associatively,
+    // an access chain: a variable with optional indexing, or field OF another
+    // chain.
+    // brackets are postfix and bind tighter than OF. OF recurses
+    // right-associatively,
     // so x OF topLeft OF r works and is x OF (topLeft OF r)
     private Node parseAccess() {
         Token first = expect(TokenType.Type.IDENTIFIER);
@@ -328,5 +348,29 @@ public class Parser {
         } catch (NumberFormatException e) {
             throw new BadParseException("size out of range: " + t.value(), t.line());
         }
+    }
+
+    private String decodeEscapes(String raw, int line) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch != '\\') {
+                out.append(ch);
+                continue;
+            }
+            if (++i >= raw.length())
+                throw new BadParseException("unterminated escape sequence", line);
+            out.append(switch (raw.charAt(i)) {
+                case 'n' -> '\n';
+                case 't' -> '\t';
+                case 'r' -> '\r';
+                case '0' -> '\0';
+                case '\\' -> '\\';
+                case '"' -> '"';
+                default -> throw new BadParseException(
+                        "unknown escape sequence '\\" + raw.charAt(i) + "'", line);
+            });
+        }
+        return out.toString();
     }
 }

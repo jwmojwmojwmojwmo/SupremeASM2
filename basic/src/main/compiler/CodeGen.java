@@ -1,10 +1,13 @@
 package basic.src.main.compiler;
 
+import java.nio.charset.StandardCharsets;
+
 // Represents the Code Generator in the compiler. The job is to trust the AST and Sema
 // and generate the SupremeASM based off them.
 public class CodeGen {
 
     private final StringBuilder finalASM = new StringBuilder();
+    private int stackDepth = 0;
 
     // mirrors ASM's addressing model: base register + offset
     private record Addr(int base, int offset) {
@@ -12,6 +15,7 @@ public class CodeGen {
 
     public String generate(Node.Program program, Sema.Result sema) {
         finalASM.setLength(0);
+        stackDepth = 0;
         emit("@version 2");
         emit("");
         // allocate the whole frame at once
@@ -23,36 +27,51 @@ public class CodeGen {
 
         for (Node n : program.statements()) {
             switch (n) {
-            case Node.AssignmentStatement a -> {
-                Sema.Type tgtType = locationType(a.target(), sema);
-                int size = tgtType.size();
+                case Node.AssignmentStatement a -> {
+                    Sema.Type tgtType = typeOf(a.target(), sema);
+                    int size = tgtType.size();
 
-                // compute the target address first, park it in %13 if dynamic so the
-                // RHS evaluation (which may use %10/%11 for its own addresses) can't touch it
-                Addr tgt = stabilize(addressOf(a.target(), 4, sema));
+                    // compute the target address first, park it in %13 if dynamic so the
+                    // RHS evaluation (which may use %10/%11 for its own addresses) can't touch it
+                    Addr tgt = stabilize(addressOf(a.target(), 4, sema));
 
-                if (size == 1 || size == 4) {
-                    // scalar: evaluate the value into %4, then store
-                    evalExpr(a.value(), 4, sema, false);
-                    emitStore(tgt, size, 4);
-                } else if (a.value() instanceof Node.NumberLiteral num) {
-                    // literal into a non-register-sized type: sign-extend / byte-wise
-                    emitStoreLiteral(num.value(), tgt, size);
-                } else {
-                    // aggregate copy: address to address, chunked
-                    Addr src = addressOf(a.value(), 4, sema);
-                    emitCopy(src, tgt, size);
+                    if (size == 1 || size == 4) {
+                        // scalar: evaluate the value into %4, then store
+                        evalExpr(a.value(), 4, sema, false);
+                        emitStore(tgt, size, 4);
+                    } else if (a.value() instanceof Node.NumberLiteral num) {
+                        // literal into a non-register-sized type: sign-extend / byte-wise
+                        emitStoreLiteral(num.value(), tgt, size);
+                    } else {
+                        // aggregate copy: address to address, chunked
+                        Addr src = addressOf(a.value(), 4, sema);
+                        emitCopy(src, tgt, size);
+                    }
                 }
-            }
-            case Node.VariableDeclaration d -> {
-            }
-            case Node.ArrayDeclaration d -> {
-            }
-            case Node.TypeDeclaration t -> {
-            }
-            case Node.StructDeclaration s -> {
-            }
-            default -> System.out.println("Warning: Unhandled statement: " + n);
+                case Node.PrintStatement p -> {
+                    if (p.value() instanceof Node.StringLiteral s) {
+                        byte[] bytes = s.value().getBytes(StandardCharsets.UTF_8);
+                        push(bytes.length);
+                        for (int i = 0; i < bytes.length; i++) {
+                            emit("ld #" + (bytes[i] & 0xFF) + ", %5;");
+                            emit("stb %5, %14+#" + i + ";");
+                        }
+                        emitWrite(14, 0, bytes.length);
+                        pop(bytes.length);
+                    } else {
+                        Addr a = addressOf(p.value(), 4, sema);
+                        emitWrite(a.base(), a.offset(), sizeOf(p.value(), sema));
+                    }
+                }
+                case Node.VariableDeclaration d -> {
+                }
+                case Node.ArrayDeclaration d -> {
+                }
+                case Node.TypeDeclaration t -> {
+                }
+                case Node.StructDeclaration s -> {
+                }
+                default -> System.out.println("Warning: Unhandled statement: " + n);
             }
         }
 
@@ -61,15 +80,14 @@ public class CodeGen {
         return finalASM.toString();
     }
 
-
     private Addr addressOf(Node loc, int reg, Sema.Result sema) {
         if (loc instanceof Node.VariableAccess va) {
             Sema.Variable v = sema.vars().get(va.name());
-            return new Addr(14, v.offset());
+            return new Addr(14, v.offset() + stackDepth);
         }
         if (loc instanceof Node.FieldAccess fa) {
             Addr base = addressOf(fa.base(), reg, sema);
-            Sema.Type baseType = locationType(fa.base(), sema);
+            Sema.Type baseType = typeOf(fa.base(), sema);
             Sema.FieldLayout field = baseType.getField(fa.fieldName());
             // field offset is a compile-time constant, so it folds into the offset field
             return new Addr(base.base(), base.offset() + field.offset());
@@ -79,17 +97,28 @@ public class CodeGen {
             int elemSize = arr.type().size();
             Addr base = addressOf(aa.base(), reg, sema);
 
+            if (aa.index() instanceof Node.NumberLiteral n) {
+                return new Addr(base.base(), base.offset() + (int) (n.value() * elemSize));
+            }
+
             evalExpr(aa.index(), reg, sema, false);
             emit("mov %" + reg + ", %10;");
             emit("ld #" + elemSize + ", %11;");
             emit("mul %10, %11, %10;");
-            // + base address (%14 + array offset)
-            emit("ld #" + base.offset() + ", %11;");
-            emit("add %" + base.base() + ", %11, %11;");
-            emit("add %11, %10, %10;");
-            return new Addr(10, 0);
+            emit("add %" + base.base() + ", %10, %10;");
+            return new Addr(10, base.offset());
         }
         throw new IllegalArgumentException("not a location: " + loc);
+    }
+
+    private int sizeOf(Node node, Sema.Result sema) {
+        if (node instanceof Node.VariableAccess va) {
+            Sema.Variable v = sema.vars().get(va.name());
+            return v.isArray()
+                    ? (int) (v.arrayLength() * v.type().size())
+                    : v.type().size();
+        }
+        return typeOf(node, sema).size();
     }
 
     // If the address is dynamic, move it into %13 so it survives RHS evaluation.
@@ -101,13 +130,13 @@ public class CodeGen {
     }
 
     // Resolve the type of a location expression (Sema has already validated it).
-    private Sema.Type locationType(Node loc, Sema.Result sema) {
+    private Sema.Type typeOf(Node loc, Sema.Result sema) {
         if (loc instanceof Node.VariableAccess va)
             return sema.vars().get(va.name()).type();
         if (loc instanceof Node.ArrayAccess aa)
             return sema.vars().get(((Node.VariableAccess) aa.base()).name()).type();
         if (loc instanceof Node.FieldAccess fa)
-            return locationType(fa.base(), sema).getField(fa.fieldName()).type();
+            return typeOf(fa.base(), sema).getField(fa.fieldName()).type();
         throw new IllegalArgumentException("not a location: " + loc);
     }
 
@@ -128,7 +157,6 @@ public class CodeGen {
         else
             throw new IllegalStateException("cannot store register into " + size + "-byte type");
     }
-
 
     // Every leaf needs one register, an array access is as heavy as its index
     private int need(Node value) {
@@ -187,17 +215,17 @@ public class CodeGen {
             int rightReg = rightFirst ? heavyReg : lightReg;
 
             String mnemonic = switch (expr.op()) {
-            case "+" -> "add";
-            case "-" -> "sub";
-            case "*" -> "mul";
-            case "/" -> "div";
-            case "%" -> "mod";
-            case "<<" -> "shl";
-            case ">>" -> "shr";
-            case "&" -> "and";
-            case "|" -> "or";
-            case "^" -> "xor";
-            default -> throw new IllegalStateException("unknown operator " + expr.op());
+                case "+" -> "add";
+                case "-" -> "sub";
+                case "*" -> "mul";
+                case "/" -> "div";
+                case "%" -> "mod";
+                case "<<" -> "shl";
+                case ">>" -> "shr";
+                case "&" -> "and";
+                case "|" -> "or";
+                case "^" -> "xor";
+                default -> throw new IllegalStateException("unknown operator " + expr.op());
             };
             emit(mnemonic + " %" + leftReg + ", %" + rightReg + ", %" + reg + ";");
             return reg;
@@ -205,21 +233,20 @@ public class CodeGen {
         if (value instanceof Node.UnaryExpression u) {
             evalExpr(u.operand(), reg, sema, hasSpilled);
             switch (u.op()) {
-            case "~" -> emit("not %" + reg + ", %" + reg + ";");
-            case "-" -> {
-                emit("not %" + reg + ", %" + reg + ";");
-                emit("inc %" + reg + ";");
-            }
-            default -> throw new IllegalStateException("unknown unary operator " + u.op());
+                case "~" -> emit("not %" + reg + ", %" + reg + ";");
+                case "-" -> {
+                    emit("not %" + reg + ", %" + reg + ";");
+                    emit("inc %" + reg + ";");
+                }
+                default -> throw new IllegalStateException("unknown unary operator " + u.op());
             }
             return reg;
         }
         // Anything else is a location: compute its address, then load.
         Addr a = addressOf(value, reg, sema);
-        emitLoad(a, locationType(value, sema).size(), reg);
+        emitLoad(a, typeOf(value, sema).size(), reg);
         return reg;
     }
-
 
     // store `value` into tgt, filling ALL size bytes, big-endian
     private void emitStoreLiteral(long value, Addr tgt, int size) {
@@ -277,6 +304,33 @@ public class CodeGen {
             emit("ldb %" + src.base() + "+#" + (src.offset() + o) + ", %5;");
             emit("stb %5, %" + tgt.base() + "+#" + (tgt.offset() + o) + ";");
         }
+    }
+
+    // write(fd=1, base+offset, n)
+    private void emitWrite(int baseReg, int offset, int n) {
+        if (offset == 0) {
+            emit("mov %" + baseReg + ", %2;");
+        } else {
+            emit("ld #" + offset + ", %2;");
+            emit("add %" + baseReg + ", %2, %2;");
+        }
+        emit("ld #" + n + ", %3;");
+        emit("ld #1, %0;");
+        emit("mov %0, %1;"); // write id and stdout fd are both 1
+        emit("syscall;");
+    }
+
+    // push and pop SP (%14)
+    private void push(int n) {
+        emit("ld #" + n + ", %5;");
+        emit("sub %14, %5, %14;");
+        stackDepth += n;
+    }
+
+    private void pop(int n) {
+        emit("ld #" + n + ", %5;");
+        emit("add %14, %5, %14;");
+        stackDepth -= n;
     }
 
     private void emit(String line) {

@@ -147,12 +147,40 @@ public class Sema {
                     checkRHS(value, targetType, a.line(), vars);
                     outStatements.add(new Node.AssignmentStatement(target, value, a.line()));
                 }
+                case Node.PrintStatement p -> {
+                    Node target = p.value();
+
+                    if (target instanceof Node.StringLiteral s) {
+                        // just push to stack for now
+                        if (s.value().isEmpty())
+                            throw new BadParseException("empty string literal", s.line());
+                        outStatements.add(new Node.PrintStatement(target, p.line()));
+                    } else {
+                        target = desugar(target, vars);
+
+                        if (!(target instanceof Node.VariableAccess
+                                || target instanceof Node.FieldAccess
+                                || target instanceof Node.ArrayAccess))
+                            throw new BadParseException(
+                                    "PRINT needs a place in memory (variable, field, or element)", p.line());
+
+                        if (target instanceof Node.VariableAccess va) {
+                            if (!vars.containsKey(va.name()))
+                                throw new BadParseException("undeclared variable '" + va.name() + "'", p.line());
+                        } else {
+                            inferExprType(target, vars);
+                        }
+
+                        outStatements.add(new Node.PrintStatement(target, p.line()));
+                    }
+                }
 
                 default -> throw new IllegalStateException("not a statement: " + n);
             }
         }
 
-        return new Result(vars, offset, new Node.Program(outStatements));
+    return new Result(vars,offset,new Node.Program(outStatements));
+
     }
 
     private Node desugar(Node n, Map<String, Variable> vars) {
@@ -172,7 +200,8 @@ public class Sema {
         return n;
     }
 
-    // return the variable if the base is a VariableAccess to an array, otherwise null
+    // return the variable if the base is a VariableAccess to an array, otherwise
+    // null
     private Variable arrayVar(Node base, Map<String, Variable> vars) {
         if (base instanceof Node.VariableAccess va) {
             Variable v = vars.get(va.name());
@@ -221,7 +250,8 @@ public class Sema {
     private Type inferExprType(Node value, Map<String, Variable> vars) {
         if (value instanceof Node.NumberLiteral)
             return null; // untyped literal
-
+        if (value instanceof Node.StringLiteral s)
+            throw new BadParseException("string literals are only supported in PRINT for now", s.line());
         if (value instanceof Node.VariableAccess ref) {
             Variable v = vars.get(ref.name());
             if (v == null)

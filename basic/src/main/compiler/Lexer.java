@@ -3,6 +3,8 @@ package basic.src.main.compiler;
 import java.util.ArrayList;
 import java.util.List;
 
+import basic.src.main.exceptions.BadParseException;
+
 // Represents the Lexer in the compiler. The job is to turn a string of source code into a list of tokens
 public class Lexer {
     private String src;
@@ -76,7 +78,46 @@ public class Lexer {
                 pos += 2;
                 continue;
             }
-            
+
+            // 6. character -> one ascii character surrounded by single quotes
+            if (c == '\'') {
+                pos++; // opening quote
+
+                if (pos >= src.length() || src.charAt(pos) == '\n')
+                    throw new BadParseException("unterminated character literal", line);
+
+                char value = src.charAt(pos++);
+
+                if (pos >= src.length())
+                    throw new BadParseException("unterminated character literal", line);
+                if (src.charAt(pos) != '\'')
+                    throw new BadParseException("character literal must contain exactly one character", line);
+                pos++; // closing quote
+
+                tokens.add(new Token(TokenType.Type.CHAR, String.valueOf(value), line));
+                continue;
+            }
+
+            // 7. string literal -> scan escape-aware, preserve raw contents
+            if (c == '"') {
+                pos++; 
+                StringBuilder raw = new StringBuilder();
+                while (true) {
+                    if (pos >= src.length() || src.charAt(pos) == '\n')
+                        throw new BadParseException("unterminated string literal", line);
+                    char ch = src.charAt(pos);
+                    if (ch == '"') { pos++; break; }
+                    if (ch == '\\') {
+                        raw.append(ch); pos++;
+                        if (pos >= src.length() || src.charAt(pos) == '\n')
+                            throw new BadParseException("unterminated string literal", line);
+                    }
+                    raw.append(src.charAt(pos)); pos++;
+                }
+                tokens.add(new Token(TokenType.Type.STRING, raw.toString(), line));
+                continue;
+            }
+
             // 6. anything else -> one-character operator
             tokens.add(new Token(TokenType.Type.OPERATOR, String.valueOf(c), line));
             pos++;
