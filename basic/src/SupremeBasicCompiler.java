@@ -12,9 +12,25 @@ import basic.src.main.compiler.SupremeCompiler;
 public class SupremeBasicCompiler {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-        System.out.println("Enter file path to SupremeBASIC program:");
-        String path = scanner.nextLine().trim();
-
+        System.out.println("Enter a valid SupremeBasicCompiler build command: <file.sbas> [--verbose] [--optimized]");
+        String command = scanner.nextLine().trim();
+        String[] parts = command.split(" ");
+        String path = parts[0];
+        boolean verbose = false;
+        boolean optimized = false;
+        for (int i = 1; i < parts.length; i++) {
+            String arg = parts[i];
+            if (arg.equals("--verbose") || arg.equals("-v")) {
+                System.out.println("Verbose output enabled.");
+                verbose = true;
+            } else if (arg.equals("--optimized") || arg.equals("-o")) {
+                System.out.println("Optimized output enabled.");
+                optimized = true;
+            } else {
+                System.err.println("Unknown argument: " + arg);
+                return;
+            }
+        }
         String content;
         try {
             if (!path.endsWith(".sbas")) {
@@ -28,13 +44,7 @@ public class SupremeBasicCompiler {
         }
 
         String baseName = Path.of(path).getFileName().toString();
-        System.out.println("File found. Press enter to compile normally. Type 'v' to compile with verbose output.");
-        String input = scanner.nextLine().trim();
-        boolean verbose = false;
-        if (input.equals("v")) {
-            verbose = true;
-        }
-        SupremeCompiler compiler = new SupremeCompiler(1, verbose);
+        SupremeCompiler compiler = new SupremeCompiler(1, verbose, optimized);
         baseName = baseName.substring(0, baseName.lastIndexOf('.'));
         boolean success = compiler.compile(content, baseName);
         if (!success) {

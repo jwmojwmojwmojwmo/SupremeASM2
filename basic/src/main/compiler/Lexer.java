@@ -86,7 +86,26 @@ public class Lexer {
                 if (pos >= src.length() || src.charAt(pos) == '\n')
                     throw new BadParseException("unterminated character literal", line);
 
-                char value = src.charAt(pos++);
+                char ch = src.charAt(pos);
+                char value;
+                if (ch == '\\') {
+                    pos++;
+                    if (pos >= src.length() || src.charAt(pos) == '\n')
+                        throw new BadParseException("unterminated character literal", line);
+                    value = switch (src.charAt(pos)) {
+                        case 'n' -> '\n';
+                        case 't' -> '\t';
+                        case 'r' -> '\r';
+                        case '0' -> '\0';
+                        case '\\' -> '\\';
+                        case '\'' -> '\'';
+                        default -> throw new BadParseException(
+                                "unknown escape sequence '" + src.charAt(pos) + "'", line);
+                    };
+                } else {
+                    value = ch;
+                }
+                pos++; // consume the character or the escape target
 
                 if (pos >= src.length())
                     throw new BadParseException("unterminated character literal", line);
@@ -118,7 +137,7 @@ public class Lexer {
                 continue;
             }
 
-            // 6. anything else -> one-character operator
+            // 8. anything else -> one-character operator
             tokens.add(new Token(TokenType.Type.OPERATOR, String.valueOf(c), line));
             pos++;
         }

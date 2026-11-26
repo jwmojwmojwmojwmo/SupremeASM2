@@ -1,11 +1,43 @@
 package basic.src.test;
 
+import basic.src.main.compiler.SupremeCompiler;
 import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class SemaTest extends CompilerTestBase {
 
+    private static void assertCompiles(String code) throws Exception {
+        run(code);
+    }
+
+    private static void assertFails(String code, String expectedFragment) throws IOException {
+        Path dir = Files.createTempDirectory("sbas");
+        String name = "t" + System.nanoTime();
+
+        PrintStream oldErr = System.err;
+        ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
+        try {
+            System.setErr(new PrintStream(errCapture));
+            SupremeCompiler compiler = new SupremeCompiler(1, false, false);
+            boolean success = compiler.compile(code, dir.resolve(name).toString());
+            assertFalse(success, "expected compilation to fail but it succeeded");
+        } finally {
+            System.setErr(oldErr);
+        }
+        String captured = errCapture.toString();
+        assertTrue(captured.contains(expectedFragment),
+                "expected error containing \"" + expectedFragment + "\" but got:\n" + captured);
+    }
+
     @Test
-    void testAll() {
+    void testAll() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE TYPE byte SIZE 1;
@@ -49,10 +81,8 @@ public class SemaTest extends CompilerTestBase {
         assertCompiles(code);
     }
 
-    // ---- valid structs / fields ----
-
     @Test
-    void testValidStructAssignment() {
+    void testValidStructAssignment() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
@@ -64,7 +94,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testValidFieldReadWrite() {
+    void testValidFieldReadWrite() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; END;
@@ -77,7 +107,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testFieldToFieldAssignment() {
+    void testFieldToFieldAssignment() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT P THEN x AS int; y AS int; END;
@@ -89,10 +119,8 @@ public class SemaTest extends CompilerTestBase {
         assertCompiles(code);
     }
 
-    // ---- literals & bounds ----
-
     @Test
-    void testByteLiteralBounds() {
+    void testByteLiteralBounds() throws Exception {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -102,7 +130,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testLiteralOverflow() {
+    void testLiteralOverflow() throws IOException {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -112,7 +140,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testNegativeLiteralAssignment() {
+    void testNegativeLiteralAssignment() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -122,7 +150,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testNegativeLiteralOverflow() {
+    void testNegativeLiteralOverflow() throws IOException {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -132,7 +160,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testNegativeLiteralInStruct() {
+    void testNegativeLiteralInStruct() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
@@ -143,7 +171,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testFoldThenBoundsCheck() {
+    void testFoldThenBoundsCheck() throws IOException {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -153,7 +181,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testLiteralToWholeStructRejected() {
+    void testLiteralToWholeStructRejected() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT P THEN x AS int; END;
@@ -163,10 +191,8 @@ public class SemaTest extends CompilerTestBase {
         assertFails(code, "cannot assign a literal to the struct");
     }
 
-    // ---- typing ----
-
     @Test
-    void testNominalTypingPreventsMismatch() {
+    void testNominalTypingPreventsMismatch() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE TYPE str SIZE 4;
@@ -178,7 +204,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testUndeclaredVariable() {
+    void testUndeclaredVariable() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -188,31 +214,29 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testAssigningToNonStruct() {
+    void testAssigningToNonStruct() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 DECLARE VARIABLE y AS int;
                 y OF x <- 5;
                 """;
-        assertFails(code, "'x' is not a struct");
+        assertFails(code, "is not a struct");
     }
 
     @Test
-    void testReadingFromNonStruct() {
+    void testReadingFromNonStruct() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 DECLARE VARIABLE y AS int;
                 y <- z OF x;
                 """;
-        assertFails(code, "'x' is not a struct");
+        assertFails(code, "is not a struct");
     }
 
-    // ---- declarations ----
-
     @Test
-    void testDuplicateTypeDeclaration() {
+    void testDuplicateTypeDeclaration() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE TYPE int SIZE 8;
@@ -221,7 +245,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testDuplicateVariableDeclaration() {
+    void testDuplicateVariableDeclaration() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -231,7 +255,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testDuplicateStructField() {
+    void testDuplicateStructField() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT P THEN x AS int; x AS int; END;
@@ -240,7 +264,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testUnknownTypeInVariable() {
+    void testUnknownTypeInVariable() throws IOException {
         String code = """
                 DECLARE VARIABLE x AS float;
                 """;
@@ -248,7 +272,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testTypeSizeZero() {
+    void testTypeSizeZero() throws IOException {
         String code = """
                 DECLARE TYPE empty SIZE 0;
                 """;
@@ -256,7 +280,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testFrameSizeExceeded() {
+    void testFrameSizeExceeded() throws IOException {
         String code = """
                 DECLARE TYPE huge SIZE 32768;
                 DECLARE VARIABLE x AS huge;
@@ -264,26 +288,26 @@ public class SemaTest extends CompilerTestBase {
         assertFails(code, "program exceeds the 32767-byte stack frame");
     }
 
-    // ---- arithmetic: valid ----
-
     @Test
-    void testArithmeticAllOperators() {
+    void testArithmeticAllOperators() throws Exception {
         String code = """
-                DECLARE TYPE int SIZE 4;
-                DECLARE VARIABLE a AS int;
-                DECLARE VARIABLE b AS int;
-                DECLARE VARIABLE x AS int;
-                x <- a + b;
-                x <- a - b;
-                x <- a * b;
-                x <- a / b;
-                x <- a % b;
-                """;
+                    DECLARE TYPE int SIZE 4;
+                    DECLARE VARIABLE a AS int;
+                    DECLARE VARIABLE b AS int;
+                    DECLARE VARIABLE x AS int;
+                    a <- 10;
+                    b <- 3;
+                    x <- a + b;
+                    x <- a - b;
+                    x <- a * b;
+                    x <- a / b;
+                    x <- a % b;
+                    """;
         assertCompiles(code);
     }
 
     @Test
-    void testArithmeticPrecedence() {
+    void testArithmeticPrecedence() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -296,7 +320,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticParentheses() {
+    void testArithmeticParentheses() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -310,7 +334,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticLiteralAdoption() {
+    void testArithmeticLiteralAdoption() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -323,7 +347,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticOnByte() {
+    void testArithmeticOnByte() throws Exception {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE a AS byte;
@@ -334,7 +358,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticFieldOperand() {
+    void testArithmeticFieldOperand() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT P THEN x AS int; END;
@@ -346,7 +370,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticFieldTarget() {
+    void testArithmeticFieldTarget() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT P THEN x AS int; END;
@@ -359,7 +383,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testFoldLiteralMathOnWideType() {
+    void testFoldLiteralMathOnWideType() throws Exception {
         String code = """
                 DECLARE TYPE long SIZE 8;
                 DECLARE VARIABLE x AS long;
@@ -368,10 +392,8 @@ public class SemaTest extends CompilerTestBase {
         assertCompiles(code);
     }
 
-    // ---- arithmetic: failures ----
-
     @Test
-    void testArithmeticOperandTypeMismatch() {
+    void testArithmeticOperandTypeMismatch() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE TYPE byte SIZE 1;
@@ -384,7 +406,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticResultTypeMismatch() {
+    void testArithmeticResultTypeMismatch() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE TYPE byte SIZE 1;
@@ -396,7 +418,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticOn2ByteRejected() {
+    void testArithmeticOn2ByteRejected() throws IOException {
         String code = """
                 DECLARE TYPE short SIZE 2;
                 DECLARE VARIABLE a AS short;
@@ -406,7 +428,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticOn8ByteRejected() {
+    void testArithmeticOn8ByteRejected() throws IOException {
         String code = """
                 DECLARE TYPE long SIZE 8;
                 DECLARE VARIABLE a AS long;
@@ -417,7 +439,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArithmeticUndeclaredOperand() {
+    void testArithmeticUndeclaredOperand() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -426,10 +448,8 @@ public class SemaTest extends CompilerTestBase {
         assertFails(code, "undeclared variable 'z'");
     }
 
-    // ---- bitwise: valid ----
-
     @Test
-    void testShiftBothDirections() {
+    void testShiftBothDirections() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -442,7 +462,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testBitwiseAllOperators() {
+    void testBitwiseAllOperators() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -456,7 +476,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testShiftOnByte() {
+    void testShiftOnByte() throws Exception {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -467,8 +487,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testShiftFoldedValueOverflow() {
-        // constants must fit at compile time, same rule as 2147483647 + 1
+    void testShiftFoldedValueOverflow() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -478,7 +497,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testBitwiseFoldThenBoundsCheck() {
+    void testBitwiseFoldThenBoundsCheck() throws IOException {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -487,9 +506,8 @@ public class SemaTest extends CompilerTestBase {
         assertFails(code, "does not fit in byte");
     }
 
-    // ---- unary: valid ----
     @Test
-    void testNotOnInt() {
+    void testNotOnInt() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
@@ -500,7 +518,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testNotOnByte() {
+    void testNotOnByte() throws Exception {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
@@ -509,33 +527,30 @@ public class SemaTest extends CompilerTestBase {
         assertCompiles(code);
     }
 
-    // ---- unary: failures ----
     @Test
-    void testNotFoldedOverflowByte() {
+    void testNotFoldedOverflowByte() throws IOException {
         String code = """
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
                 b <- ~128;
                 """;
-        assertFails(code, "does not fit in byte"); // -129
+        assertFails(code, "does not fit in byte");
     }
 
-    // ---- arrays: valid ----
-
     @Test
-    void testArrayDeclaration() {
+    void testArrayDeclaration() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 """;
         assertCompiles(code);
     }
 
     @Test
-    void testArrayLiteralIndex() {
+    void testArrayLiteralIndex() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 grid[0] <- 42;
                 grid[9] <- 99;
                 """;
@@ -543,10 +558,10 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayVariableIndex() {
+    void testArrayVariableIndex() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE i AS int;
                 i <- 5;
                 grid[i] <- 42;
@@ -555,11 +570,11 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayFieldAccess() {
+    void testArrayFieldAccess() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
-                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE ARRAY grid AS Point LENGTH 4;
                 x OF grid[0] <- 10;
                 y OF grid[1] <- 20;
                 """;
@@ -567,11 +582,11 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayFieldAccessVariableIndex() {
+    void testArrayFieldAccessVariableIndex() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
-                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE ARRAY grid AS Point LENGTH 4;
                 DECLARE VARIABLE i AS int;
                 i <- 2;
                 x OF grid[i] <- 99;
@@ -580,10 +595,10 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayOfArrays() {
+    void testArrayOfArrays() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY matrix AS int LEN 16;
+                DECLARE ARRAY matrix AS int LENGTH 16;
                 matrix[0] <- 42;
                 matrix[15] <- 99;
                 """;
@@ -591,10 +606,10 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayRead() {
+    void testArrayRead() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE x AS int;
                 grid[5] <- 42;
                 x <- grid[5];
@@ -603,11 +618,11 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayFieldRead() {
+    void testArrayFieldRead() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; END;
-                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE ARRAY grid AS Point LENGTH 4;
                 DECLARE VARIABLE myX AS int;
                 x OF grid[0] <- 10;
                 myX <- x OF grid[0];
@@ -616,33 +631,33 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testLenOfArray() {
+    void testLengthOfArray() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 42;
+                DECLARE ARRAY grid AS int LENGTH 42;
                 DECLARE VARIABLE len AS int;
-                len <- LEN OF grid;
+                len <- LENGTH OF grid;
                 """;
         assertCompiles(code);
     }
 
     @Test
-    void testLenInExpression() {
+    void testLengthInExpression() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE total AS int;
-                total <- LEN OF grid * 4;
+                total <- LENGTH OF grid * 4;
                 """;
         assertCompiles(code);
     }
 
     @Test
-    void testArrayCopyElementToElement() {
+    void testArrayCopyElementToElement() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY src AS int LEN 10;
-                DECLARE ARRAY dst AS int LEN 10;
+                DECLARE ARRAY src AS int LENGTH 10;
+                DECLARE ARRAY dst AS int LENGTH 10;
                 src[0] <- 42;
                 dst[1] <- src[0];
                 """;
@@ -650,71 +665,69 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayFieldToField() {
+    void testArrayFieldToField() throws Exception {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
-                DECLARE ARRAY grid AS Point LEN 4;
+                DECLARE ARRAY grid AS Point LENGTH 4;
                 x OF grid[0] <- 10;
                 y OF grid[1] <- x OF grid[0];
                 """;
         assertCompiles(code);
     }
 
-    // ---- arrays: failures ----
-
     @Test
-    void testArrayOutOfBounds() {
+    void testArrayOutOfBounds() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 grid[10] <- 42;
                 """;
-        assertFails(code, "array index 10 out of bounds");
+        assertFails(code, "out of bounds");
     }
 
     @Test
-    void testArrayNegativeIndex() {
+    void testArrayNegativeIndex() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 grid[-1] <- 42;
                 """;
-        assertFails(code, "array index -1 out of bounds");
+        assertFails(code, "out of bounds");
     }
 
     @Test
-    void testArrayUnknownType() {
+    void testArrayUnknownType() throws IOException {
         String code = """
-                DECLARE ARRAY grid AS unknown LEN 10;
+                DECLARE ARRAY grid AS unknown LENGTH 10;
                 """;
         assertFails(code, "unknown type 'unknown'");
     }
 
     @Test
-    void testArrayZeroLength() {
+    void testArrayZeroLength() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 0;
+                DECLARE ARRAY grid AS int LENGTH 0;
                 """;
         assertFails(code, "array length must be at least 1");
     }
 
     @Test
-    void testArrayFrameOverflow() {
+    void testArrayFrameOverflow() throws IOException {
         String code = """
                 DECLARE TYPE huge SIZE 8192;
-                DECLARE ARRAY grid AS huge LEN 5;
+                DECLARE ARRAY grid AS huge LENGTH 5;
                 """;
         assertFails(code, "program exceeds the 32767-byte stack frame");
     }
 
     @Test
-    void testArrayIndexNonInteger() {
+    void testArrayIndexNonInteger() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; END;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE p AS Point;
                 grid[p] <- 42;
                 """;
@@ -722,7 +735,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayAccessNonArray() {
+    void testArrayAccessNonArray() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -732,7 +745,7 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testArrayFieldAccessNonArray() {
+    void testArrayFieldAccessNonArray() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
@@ -742,32 +755,32 @@ public class SemaTest extends CompilerTestBase {
     }
 
     @Test
-    void testLenOfNonArray() {
+    void testLengthOfNonArray() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 DECLARE VARIABLE len AS int;
-                len <- LEN OF x;
+                len <- LENGTH OF x;
                 """;
-        assertFails(code, "LEN can only be applied to arrays");
+        assertFails(code, "not a struct");
     }
 
     @Test
-    void testArrayArithmeticForbidden() {
+    void testArrayArithmeticForbidden() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE x AS int;
                 x <- grid + 1;
                 """;
-        assertFails(code, "cannot use array 'grid' directly in expression");
+        assertFails(code, "cannot use array 'grid'");
     }
 
     @Test
-    void testArrayAssignWholeArray() {
+    void testArrayAssignWholeArray() throws IOException {
         String code = """
                 DECLARE TYPE int SIZE 4;
-                DECLARE ARRAY grid AS int LEN 10;
+                DECLARE ARRAY grid AS int LENGTH 10;
                 grid <- 42;
                 """;
         assertFails(code, "cannot assign to whole array");

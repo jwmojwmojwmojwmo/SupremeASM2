@@ -425,6 +425,7 @@ PRINT "€";          // writes 3 bytes (UTF-8 encoding of €)
 not decimal digits. If you want to print `42` as the characters `4` and `2`, you must build
 those bytes yourself. Then again since there's no control flow uhh good luck with that :/
 
+Also string literals can only be used in print for the time being. 
 ---
 
 ## Expressions

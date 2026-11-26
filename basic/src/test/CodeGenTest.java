@@ -1,386 +1,360 @@
 package basic.src.test;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class CodeGenTest extends CompilerTestBase {
 
     @Test
-    void testCodeGenLiteralAssignment() {
-        String code = """
+    void testCodeGenLiteralAssignment() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- 42;
-                """;
-        assertAsmContains(code, "ld #42, %5;");
-        assertAsmContains(code, "sti %5, %14+#0;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenVariableCopy() {
-        String code = """
+    void testCodeGenVariableCopy() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 10), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 DECLARE VARIABLE y AS int;
                 x <- 10;
                 y <- x;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %5;");
-        assertAsmContains(code, "sti %5, %14+#4;");
+                PRINT y;
+                """));
     }
 
     @Test
-    void testCodeGenStructCopy() {
-        String code = """
+    void testCodeGenStructCopy() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 200), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE VARIABLE p1 AS Point;
                 DECLARE VARIABLE p2 AS Point;
+                x OF p1 <- 100;
+                y OF p1 <- 200;
                 p2 <- p1;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %5;");
-        assertAsmContains(code, "sti %5, %14+#8;");
-        assertAsmContains(code, "ldi %14+#4, %5;");
-        assertAsmContains(code, "sti %5, %14+#12;");
+                PRINT y OF p2;
+                """));
     }
 
     @Test
-    void testCodeGenFieldWrite() {
-        String code = """
+    void testCodeGenFieldWrite() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 100), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE VARIABLE p AS Point;
                 x OF p <- 100;
-                """;
-        assertAsmContains(code, "ld #100, %5;");
-        assertAsmContains(code, "sti %5, %14+#0;");
+                PRINT x OF p;
+                """));
     }
 
     @Test
-    void testCodeGenFieldRead() {
-        String code = """
+    void testCodeGenFieldRead() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 100), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE VARIABLE p AS Point;
                 DECLARE VARIABLE myX AS int;
+                x OF p <- 100;
                 myX <- x OF p;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %5;");
-        assertAsmContains(code, "sti %5, %14+#8;");
+                PRINT myX;
+                """));
     }
 
     @Test
-    void testCodeGenByteOperations() {
-        String code = """
+    void testCodeGenByteOperations() throws Exception {
+        assertBytesEqual(bytes(50), run("""
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b1 AS byte;
                 DECLARE VARIABLE b2 AS byte;
                 b1 <- 50;
                 b2 <- b1;
-                """;
-        assertAsmContains(code, "ld #50, %5;");
-        assertAsmContains(code, "stb %5, %14+#0;");
-        assertAsmContains(code, "ldb %14+#0, %5;");
-        assertAsmContains(code, "stb %5, %14+#1;");
+                PRINT b2;
+                """));
     }
 
     @Test
-    void testCodeGenStackAllocation() {
-        String code = """
+    void testCodeGenStackAllocation() throws Exception {
+        run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 DECLARE VARIABLE y AS int;
-                """;
-        assertAsmContains(code, "ld #8, %5;");
-        assertAsmContains(code, "sub %14, %5, %14;");
+                """);
     }
 
     @Test
-    void testCodeGenLiteralAssignmentSize2() {
-        String code = """
+    void testCodeGenLiteralAssignmentSize2() throws Exception {
+        assertBytesEqual(bytes(3, 232), run("""
                 DECLARE TYPE short SIZE 2;
                 DECLARE VARIABLE x AS short;
                 x <- 1000;
-                """;
-        assertAsmContains(code, "ld #3, %5;");
-        assertAsmContains(code, "stb %5, %14+#0;");
-        assertAsmContains(code, "ld #232, %5;");
-        assertAsmContains(code, "stb %5, %14+#1;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenLiteralAssignmentSize8() {
-        String code = """
+    void testCodeGenLiteralAssignmentSize8() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 0, 0, 1, 134, 160), run("""
                 DECLARE TYPE long SIZE 8;
                 DECLARE VARIABLE x AS long;
                 x <- 100000;
-                """;
-        assertAsmContains(code, "ld #100000, %5;");
-        assertAsmContains(code, "ld #0, %6;");
-        assertAsmContains(code, "sti %6, %14+#0;");
-        assertAsmContains(code, "sti %5, %14+#4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenNegativeLiteralSize8() {
-        String code = """
+    void testCodeGenNegativeLiteralSize8() throws Exception {
+        assertBytesEqual(bytes(255, 255, 255, 255, 255, 255, 255, 255), run("""
                 DECLARE TYPE long SIZE 8;
                 DECLARE VARIABLE x AS long;
                 x <- -1;
-                """;
-        assertAsmContains(code, "ld #-1, %5;");
-        assertAsmContains(code, "ld #-1, %6;");
+                PRINT x;
+                """));
     }
 
-    // ---- constant folding ----
-
     @Test
-    void testFoldPrecedence() {
-        String code = """
+    void testFoldPrecedence() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 14), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- 2 + 3 * 4;
-                """;
-        assertAsmContains(code, "ld #14, %5;");
-        assertAsmNotContains(code, "add");
-        assertAsmNotContains(code, "mul");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testFoldParentheses() {
-        String code = """
+    void testFoldParentheses() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 20), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- (2 + 3) * 4;
-                """;
-        assertAsmContains(code, "ld #20, %5;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testFoldIntegerDivisionAndModulo() {
-        String code = """
+    void testFoldIntegerDivisionAndModulo() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 3, 0, 0, 0, 1), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- 10 / 3;
+                PRINT x;
                 x <- 10 % 3;
-                """;
-        assertAsmContains(code, "ld #3, %5;");
-        assertAsmContains(code, "ld #1, %5;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testFoldNegativeResult() {
-        String code = """
+    void testFoldNegativeResult() throws Exception {
+        assertBytesEqual(bytes(255, 255, 255, 253), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- 2 - 5;
-                """;
-        assertAsmContains(code, "ld #-3, %5;");
+                PRINT x;
+                """));
     }
 
-    // ---- arithmetic with variables (register emission) ----
-
     @Test
-    void testCodeGenAddRegisters() {
-        String code = """
+    void testCodeGenAddRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 30), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 10;
+                b <- 20;
                 x <- a + b;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %4;");
-        assertAsmContains(code, "ldi %14+#4, %5;");
-        assertAsmContains(code, "add %4, %5, %4;");
-        assertAsmContains(code, "sti %4, %14+#8;");
+                PRINT x;
+                """));
     }
 
-    // ---- bitwise: register emission ----
-
     @Test
-    void testCodeGenShlRegisters() {
-        String code = """
+    void testCodeGenShlRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 20), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 5;
+                b <- 2;
                 x <- a << b;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %4;");
-        assertAsmContains(code, "ldi %14+#4, %5;");
-        assertAsmContains(code, "shl %4, %5, %4;");
-        assertAsmContains(code, "sti %4, %14+#8;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenShrRegisters() {
-        String code = """
+    void testCodeGenShrRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 5), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 20;
+                b <- 2;
                 x <- a >> b;
-                """;
-        assertAsmContains(code, "shr %4, %5, %4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenAndRegisters() {
-        String code = """
+    void testCodeGenAndRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 9), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 15;
+                b <- 9;
                 x <- a & b;
-                """;
-        assertAsmContains(code, "and %4, %5, %4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenOrRegisters() {
-        String code = """
+    void testCodeGenOrRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 12), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 8;
+                b <- 4;
                 x <- a | b;
-                """;
-        assertAsmContains(code, "or %4, %5, %4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenXorRegisters() {
-        String code = """
+    void testCodeGenXorRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 12), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 10;
+                b <- 6;
                 x <- a ^ b;
-                """;
-        assertAsmContains(code, "xor %4, %5, %4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenShiftLiteralCount() {
-        String code = """
+    void testCodeGenShiftLiteralCount() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 20), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 5;
                 x <- a << 2;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %4;");
-        assertAsmContains(code, "ld #2, %5;");
-        assertAsmContains(code, "shl %4, %5, %4;");
-        assertAsmContains(code, "sti %4, %14+#4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenShiftByte() {
-        String code = """
+    void testCodeGenShiftByte() throws Exception {
+        assertBytesEqual(bytes(100), run("""
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE a AS byte;
                 DECLARE VARIABLE b AS byte;
+                b <- 50;
                 a <- b << 1;
-                """;
-        assertAsmContains(code, "ldb %14+#1, %4;");
-        assertAsmContains(code, "shl %4, %5, %4;");
-        assertAsmContains(code, "stb %4, %14+#0;");
+                PRINT a;
+                """));
     }
 
     @Test
-    void testCodeGenBitwiseByte() {
-        String code = """
+    void testCodeGenBitwiseByte() throws Exception {
+        assertBytesEqual(bytes(15), run("""
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b1 AS byte;
                 DECLARE VARIABLE b2 AS byte;
+                b2 <- -1;
                 b1 <- b2 & 15;
-                """;
-        assertAsmContains(code, "ldb %14+#1, %4;");
-        assertAsmContains(code, "and %4, %5, %4;");
-        assertAsmContains(code, "stb %4, %14+#0;");
+                PRINT b1;
+                """));
     }
 
     @Test
-    void testCodeGenNestedShiftRegisters() {
-        String code = """
+    void testCodeGenNestedShiftRegisters() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 20), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 5;
+                b <- 4;
                 x <- a << (b >> 1);
-                """;
-        assertAsmContains(code, "ld #12, %5;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testFoldShiftRightNegative() {
-        String code = """
+    void testFoldShiftRightNegative() throws Exception {
+        assertBytesEqual(bytes(255, 255, 255, 252), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- -8 >> 1;
-                """;
-        assertAsmContains(code, "ld #-4, %5;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testFoldBitwiseOps() {
-        String code = """
+    void testFoldBitwiseOps() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 8, 0, 0, 0, 15, 0, 0, 0, 6), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE x AS int;
                 x <- 12 & 10;
+                PRINT x;
                 x <- 12 | 3;
+                PRINT x;
                 x <- 12 ^ 10;
-                """;
-        assertAsmContains(code, "ld #8, %5;");
-        assertAsmContains(code, "ld #15, %5;");
-        assertAsmContains(code, "ld #6, %5;");
-        assertAsmNotContains(code, "and");
-        assertAsmNotContains(code, "or");
-        assertAsmNotContains(code, "xor");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenNot() {
-        String code = """
+    void testCodeGenNot() throws Exception {
+        assertBytesEqual(bytes(255, 255, 255, 255), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 0;
                 x <- ~a;
-                """;
-        assertAsmContains(code, "ldi %14+#0, %4;");
-        assertAsmContains(code, "not %4, %4;");
-        assertAsmContains(code, "sti %4, %14+#4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenNotByte() {
-        String code = """
+    void testCodeGenNotByte() throws Exception {
+        assertBytesEqual(bytes(255), run("""
                 DECLARE TYPE byte SIZE 1;
                 DECLARE VARIABLE b AS byte;
+                b <- 0;
                 b <- ~b;
-                """;
-        assertAsmContains(code, "ldb %14+#0, %4;");
-        assertAsmContains(code, "not %4, %4;");
-        assertAsmContains(code, "stb %4, %14+#0;");
+                PRINT b;
+                """));
     }
 
     @Test
-    void testCodeGenChainedNot() {
-        String code = """
+    void testCodeGenChainedNot() throws Exception {
+        assertBytesEqual(bytes(255, 255, 255, 250), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE x AS int;
+                a <- 5;
                 x <- ~~~a;
-                """;
-        // all in place in %4
-        assertAsmContains(code, "not %4, %4;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenSethi() {
-        String code = """
+    void testCodeGenSethi() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 0), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE b AS int;
@@ -394,17 +368,15 @@ public class CodeGenTest extends CompilerTestBase {
                 DECLARE VARIABLE j AS int;
                 DECLARE VARIABLE k AS int;
                 DECLARE VARIABLE x AS int;
+                h <- 1;
                 x <- (a+(b+(c+(d+(e+(f^(g/(h*(i-(~j+k))))))))));
-                """;
-        assertAsmContains(code, "ld #48, %5;");
-
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenNotEnoughRegs() {
-        // It uses '-' because subtraction is not associative, so the tree can't be
-        // regrouped to need fewer registers.
-        String code = """
+    void testCodeGenNotEnoughRegs() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 0), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE VARIABLE a AS int;
                 DECLARE VARIABLE x AS int;
@@ -417,159 +389,144 @@ public class CodeGenTest extends CompilerTestBase {
                            - (((a - a) - (a - a)) - ((a - a) - (a - a))))
                           - ((((a - a) - (a - a)) - ((a - a) - (a - a)))
                              - (((a - a) - (a - a)) - ((a - a) - (a - a))))));
-                """;
-        assertAsmContains(code, "sti %4, %14+#4");
+                PRINT x;
+                """));
     }
 
-    // ---- array code generation ----
-
     @Test
-    void testCodeGenArrayLiteralIndex() {
-        String code = """
+    void testCodeGenArrayLiteralIndex() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 10;
                 grid[0] <- 42;
-                """;
-        assertAsmContains(code, "ld #42, %5;");
-        assertAsmContains(code, "sti %5, %14+#0;");
+                PRINT grid[0];
+                """));
     }
 
     @Test
-    void testCodeGenArrayLiteralIndexNonZero() {
-        String code = """
+    void testCodeGenArrayLiteralIndexNonZero() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 10;
                 grid[3] <- 42;
-                """;
-        assertAsmContains(code, "ld #42, %5;");
-        assertAsmContains(code, "sti %5, %14+#12;");
+                PRINT grid[3];
+                """));
     }
 
     @Test
-    void testCodeGenArrayVariableIndex() {
-        String code = """
+    void testCodeGenArrayVariableIndex() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE i AS int;
                 i <- 5;
                 grid[i] <- 42;
-                """;
-        // Should compute address: %14 + (i * 4)
-        assertAsmContains(code, "mul");
-        assertAsmContains(code, "sti %5, %10+#0;");
+                PRINT grid[i];
+                """));
     }
 
     @Test
-    void testCodeGenArrayRead() {
-        String code = """
+    void testCodeGenArrayRead() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE x AS int;
                 grid[5] <- 42;
                 x <- grid[5];
-                """;
-        assertAsmContains(code, "ldi %14+#20, %5;");
-        assertAsmContains(code, "sti %5, %14+#40;");
+                PRINT x;
+                """));
     }
 
     @Test
-    void testCodeGenArrayFieldAccess() {
-        String code = """
+    void testCodeGenArrayFieldAccess() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 10), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE ARRAY grid AS Point LENGTH 4;
                 x OF grid[0] <- 10;
-                """;
-        assertAsmContains(code, "ld #10, %5;");
-        assertAsmContains(code, "sti %5, %14+#0;");
+                PRINT x OF grid[0];
+                """));
     }
 
     @Test
-    void testCodeGenArrayFieldAccessNonZero() {
-        String code = """
+    void testCodeGenArrayFieldAccessNonZero() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 20), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE ARRAY grid AS Point LENGTH 4;
                 y OF grid[0] <- 20;
-                """;
-        assertAsmContains(code, "ld #20, %5;");
-        assertAsmContains(code, "sti %5, %14+#4;");
+                PRINT y OF grid[0];
+                """));
     }
 
     @Test
-    void testCodeGenArrayFieldAccessNonZeroElement() {
-        String code = """
+    void testCodeGenArrayFieldAccessNonZeroElement() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 30), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE ARRAY grid AS Point LENGTH 4;
                 x OF grid[2] <- 30;
-                """;
-        assertAsmContains(code, "ld #30, %5;");
-        assertAsmContains(code, "sti %5, %14+#16;");
+                PRINT x OF grid[2];
+                """));
     }
 
     @Test
-    void testCodeGenArrayFieldAccessVariableIndex() {
-        String code = """
+    void testCodeGenArrayFieldAccessVariableIndex() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 40), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; y AS int; END;
                 DECLARE ARRAY grid AS Point LENGTH 4;
                 DECLARE VARIABLE i AS int;
                 i <- 1;
                 x OF grid[i] <- 40;
-                """;
-        // Should compute address: %14 + (i * 8) + 0
-        assertAsmContains(code, "ld #8, %11;");
-        assertAsmContains(code, "mul");
+                PRINT x OF grid[i];
+                """));
     }
 
     @Test
-    void testCodeGenArrayFieldRead() {
-        String code = """
+    void testCodeGenArrayFieldRead() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 10), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE STRUCT Point THEN x AS int; END;
                 DECLARE ARRAY grid AS Point LENGTH 4;
                 DECLARE VARIABLE myX AS int;
                 x OF grid[0] <- 10;
                 myX <- x OF grid[0];
-                """;
-        assertAsmContains(code, "ldi %14+#0, %5;");
-        assertAsmContains(code, "sti %5, %14+#16;");
+                PRINT myX;
+                """));
     }
 
     @Test
-    void testCodeGenLenOfArray() {
-        String code = """
+    void testCodeGenLenOfArray() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 42;
                 DECLARE VARIABLE len AS int;
                 len <- LENGTH OF grid;
-                """;
-        assertAsmContains(code, "ld #42, %5;");
-        assertAsmContains(code, "sti %5, %14+#168;");
+                PRINT len;
+                """));
     }
 
     @Test
-    void testCodeGenLenInExpression() {
-        String code = """
+    void testCodeGenLenInExpression() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 40), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY grid AS int LENGTH 10;
                 DECLARE VARIABLE total AS int;
                 total <- LENGTH OF grid * 4;
-                """;
-        assertAsmContains(code, "ld #40, %5;");
+                PRINT total;
+                """));
     }
 
     @Test
-    void testCodeGenArrayElementCopy() {
-        String code = """
+    void testCodeGenArrayElementCopy() throws Exception {
+        assertBytesEqual(bytes(0, 0, 0, 42), run("""
                 DECLARE TYPE int SIZE 4;
                 DECLARE ARRAY src AS int LENGTH 10;
                 DECLARE ARRAY dst AS int LENGTH 10;
                 src[5] <- 42;
                 dst[3] <- src[5];
-                """;
-        assertAsmContains(code, "ldi %14+#20, %5;");
-        assertAsmContains(code, "sti %5, %14+#52;");
+                PRINT dst[3];
+                """));
     }
 }

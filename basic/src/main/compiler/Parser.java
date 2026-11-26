@@ -93,6 +93,8 @@ public class Parser {
             return parseStructDecl();
         if (isKw("ARRAY"))
             return parseArrayDecl();
+        // if (isKw("CONST"))
+        //     return parseConstDecl();
         throw new BadParseException("expected VARIABLE, TYPE, STRUCT, or ARRAY after DECLARE", peek().line());
     }
 
@@ -227,9 +229,9 @@ public class Parser {
                 long result;
                 try {
                     result = switch (op.value()) {
-                        case "~" -> ~n.value();
-                        case "-" -> Math.negateExact(n.value());
-                        default -> throw new IllegalStateException("unknown unary operator " + op);
+                    case "~" -> ~n.value();
+                    case "-" -> Math.negateExact(n.value());
+                    default -> throw new IllegalStateException("unknown unary operator " + op);
                     };
                 } catch (ArithmeticException e) {
                     throw new BadParseException("constant expression out of range", op.line());
@@ -297,42 +299,43 @@ public class Parser {
     }
 
     // If both sides are literals, compute now; otherwise build a BinaryExpression.
-    private Node fold(String op, Node left, Node right, int line) {
+    // TODO!! this is temporarily static while we don't have an optimizer for Sema
+    public static Node fold(String op, Node left, Node right, int line) {
         if (left instanceof Node.NumberLiteral l && right instanceof Node.NumberLiteral r) {
             long result;
             try {
                 result = switch (op) {
-                    case "+" -> Math.addExact(l.value(), r.value());
-                    case "-" -> Math.subtractExact(l.value(), r.value());
-                    case "*" -> Math.multiplyExact(l.value(), r.value());
-                    case "/" -> {
-                        if (r.value() == 0)
-                            throw new BadParseException("division by zero in constant expression", line);
-                        yield l.value() / r.value();
-                    }
-                    case "%" -> {
-                        if (r.value() == 0)
-                            throw new BadParseException("division by zero in constant expression", line);
-                        yield l.value() % r.value();
-                    }
-                    case "&" -> l.value() & r.value();
-                    case "|" -> l.value() | r.value();
-                    case "^" -> l.value() ^ r.value();
-                    case "<<" -> {
-                        if (r.value() < 0 || r.value() > 31)
-                            throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
-                        long res = l.value() << r.value();
-                        // larp as Math.exact
-                        if ((res >> r.value()) != l.value())
-                            throw new BadParseException("constant expression out of range", line);
-                        yield res;
-                    }
-                    case ">>" -> {
-                        if (r.value() < 0 || r.value() > 31)
-                            throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
-                        yield l.value() >> r.value();
-                    }
-                    default -> throw new IllegalStateException("unknown operator " + op);
+                case "+" -> Math.addExact(l.value(), r.value());
+                case "-" -> Math.subtractExact(l.value(), r.value());
+                case "*" -> Math.multiplyExact(l.value(), r.value());
+                case "/" -> {
+                    if (r.value() == 0)
+                        throw new BadParseException("division by zero in constant expression", line);
+                    yield l.value() / r.value();
+                }
+                case "%" -> {
+                    if (r.value() == 0)
+                        throw new BadParseException("division by zero in constant expression", line);
+                    yield l.value() % r.value();
+                }
+                case "&" -> l.value() & r.value();
+                case "|" -> l.value() | r.value();
+                case "^" -> l.value() ^ r.value();
+                case "<<" -> {
+                    if (r.value() < 0 || r.value() > 31)
+                        throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
+                    long res = l.value() << r.value();
+                    // larp as Math.exact
+                    if ((res >> r.value()) != l.value())
+                        throw new BadParseException("constant expression out of range", line);
+                    yield res;
+                }
+                case ">>" -> {
+                    if (r.value() < 0 || r.value() > 31)
+                        throw new BadParseException("shift count " + r.value() + " outside 0..31", line);
+                    yield l.value() >> r.value();
+                }
+                default -> throw new IllegalStateException("unknown operator " + op);
                 };
             } catch (ArithmeticException e) {
                 throw new BadParseException("constant expression out of range", line);
@@ -361,14 +364,13 @@ public class Parser {
             if (++i >= raw.length())
                 throw new BadParseException("unterminated escape sequence", line);
             out.append(switch (raw.charAt(i)) {
-                case 'n' -> '\n';
-                case 't' -> '\t';
-                case 'r' -> '\r';
-                case '0' -> '\0';
-                case '\\' -> '\\';
-                case '"' -> '"';
-                default -> throw new BadParseException(
-                        "unknown escape sequence '\\" + raw.charAt(i) + "'", line);
+            case 'n' -> '\n';
+            case 't' -> '\t';
+            case 'r' -> '\r';
+            case '0' -> '\0';
+            case '\\' -> '\\';
+            case '"' -> '"';
+            default -> throw new BadParseException("unknown escape sequence '\\" + raw.charAt(i) + "'", line);
             });
         }
         return out.toString();

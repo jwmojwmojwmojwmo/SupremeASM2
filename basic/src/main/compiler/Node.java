@@ -31,6 +31,11 @@ public sealed interface Node {
     record PrintStatement(Node value, int line) implements Node {
     }
 
+    
+    // record ConstDeclaration(String name, String typeName, Node value, int line) implements Node {
+    //     // consts must assign a value while being declared
+    // }
+
     // Expressions return values and can be used in assignments or other expressions
     record BinaryExpression(String op, Node left, Node right, int line) implements Node {
     }

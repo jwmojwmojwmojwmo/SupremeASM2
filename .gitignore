@@ -5,3 +5,4 @@ test.smc
 *.pdb
 *.obj
 executable/
+*.exe

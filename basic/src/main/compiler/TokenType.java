@@ -9,5 +9,5 @@ public final class TokenType {
     }
 
     public static final Set<String> KEYWORDS = Set.of(
-            "DECLARE", "SIZE", "VARIABLE", "TYPE", "AS", "STRUCT", "THEN", "END", "OF", "ARRAY", "PRINT");
+            "DECLARE", "SIZE", "VARIABLE", "TYPE", "AS", "STRUCT", "THEN", "END", "OF", "ARRAY", "PRINT", "CONST");
 }

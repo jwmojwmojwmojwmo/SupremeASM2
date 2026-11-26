@@ -15,10 +15,12 @@ public class SupremeCompiler {
     Sema sema;
     CodeGen codeGen;
     boolean verbose;
+    boolean optimized;
 
-    public SupremeCompiler(int version, boolean verbose) {
+    public SupremeCompiler(int version, boolean verbose, boolean optimized) {
         compilerVersion = version;
         this.verbose = verbose;
+        this.optimized = optimized;
         lexer = new Lexer();
         parser = new Parser();
         sema = new Sema();
